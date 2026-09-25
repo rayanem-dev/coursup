@@ -108,15 +108,36 @@
   table.emploi .cell{border-radius:6px;padding:2px 4px;margin-bottom:3px;font-size:10px;line-height:1.25}
   table.emploi .cell.ecole{background:#eef1fb;cursor:pointer}
   table.emploi .cell.cours{background:#fff3e0}
+  .print-header,.print-footer{display:none}
   @media print{
     header,nav#tabs,#modal{display:none!important}
     body{background:#fff}
     #app>.card{display:none!important}
     #app>.card.grid-print{display:block!important;border:0;box-shadow:none;padding:0;margin:0}
-    .grid-print .row button{display:none!important}
-    table.emploi{min-width:0}
+    .grid-print .row,.grid-print .sub{display:none!important}
+    .print-header{
+      display:block!important;text-align:center;margin-bottom:10px;
+      border-bottom:3px solid var(--pri);padding-bottom:8px
+    }
+    .print-header h1{margin:0;font-size:20pt;color:var(--pri)}
+    .print-header .print-sub{margin-top:3px;font-size:10pt;color:var(--mut)}
+    .print-footer{
+      display:flex!important;justify-content:center;gap:22px;margin-top:10px;font-size:9pt;color:var(--mut)
+    }
+    .print-footer .lg{display:inline-flex;align-items:center;gap:5px}
+    .print-footer .sw{width:11px;height:11px;border-radius:3px;display:inline-block}
+    .print-footer .sw.ecole{background:#eef1fb;border:1px solid #aab6e8}
+    .print-footer .sw.cours{background:#fff3e0;border:1px solid #e3ab5c}
+    table.emploi{min-width:0;font-size:8.5pt;-webkit-print-color-adjust:exact;print-color-adjust:exact}
     table.emploi th,table.emploi td.heure{position:static;box-shadow:none}
-    @page{size:landscape;margin:10mm}
+    table.emploi th,table.emploi td{padding:2px 3px}
+    table.emploi th{font-size:8.5pt}
+    table.emploi td.heure{font-size:8pt}
+    table.emploi .cell{padding:1.5px 4px;margin-bottom:2px;font-size:7.6pt;line-height:1.2;-webkit-print-color-adjust:exact;print-color-adjust:exact}
+    table.emploi .cell.ecole{background:#eef1fb!important}
+    table.emploi .cell.cours{background:#fff3e0!important}
+    table,tr,td,th{page-break-inside:avoid}
+    @page{size:landscape;margin:8mm}
   }
 </style>
 </head>
@@ -362,13 +383,18 @@ function vGrilleEmploi(){
         return '<td>'+((c.byDay[d]||[]).join(''))+'</td>';
       }).join('')+'</tr>';
     }).join('');
-  return '<div class="card grid-print"><div class="row" style="padding:0 0 10px;border:0;flex-wrap:wrap">'
+  return '<div class="card grid-print"><div class="print-header">'
+    +'<h1>🗓️ Emploi du temps'+(D.enfants.length?' — '+D.enfants.map(function(e){return esc(e.Nom);}).join(' & '):'')+'</h1>'
+    +'<div class="print-sub">Lycée + cours particuliers · '+esc(fd(today()))+'</div></div>'
+    +'<div class="row" style="padding:0 0 10px;border:0;flex-wrap:wrap">'
     +'<h2 style="margin:0">🗓️ Emploi du temps combiné</h2><span class="grow"></span>'
     +'<button class="b" onclick="openImportEcole()">📥 Importer du lycée</button>'
     +'<button class="b" onclick="window.print()">🖨️ Imprimer</button>'
     +'<button class="b p" onclick="openEcole()">+ Créneau</button></div>'
     +'<div class="sub" style="margin-bottom:8px">Lycée (gratuit, modifiable ici) + cours particuliers. Clique un créneau du lycée pour le modifier.</div>'
-    +'<table class="emploi">'+head+body+'</table></div>';
+    +'<table class="emploi">'+head+body+'</table>'
+    +'<div class="print-footer"><span class="lg"><span class="sw ecole"></span>Lycée</span><span class="lg"><span class="sw cours"></span>Cours particuliers</span></div>'
+    +'</div>';
 }
 function openEcole(id){
   var x=id?(D.ecole||[]).find(function(o){return same(o.ID,id);}):null;

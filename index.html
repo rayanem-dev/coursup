@@ -148,8 +148,8 @@
 <div id="modal" class="modal hidden" onclick="if(event.target===this)closeM()"><div class="box" id="box"></div></div>
 
 <script>
-var DEFAULT_API_URL = 'https://script.google.com/macros/s/AKfycbwq_NB20GalEiIs_0znUAkjl0eFpa7tK9P02eLX-Muhchrgs7HCI4PgH1Dn7ZgRO9A5/exec';
-var D = {enfants:[], cours:[], seances:[], paiements:[], ecole:[]};
+var DEFAULT_API_URL = 'https://script.google.com/macros/s/AKfycbwAGd1SyojhxO4b_WW4QNl2K7AoiKNXwjv2l8gmI_Y/dev';
+var D = {enfants:[], cours:[], seances:[], paiements:[], ecole:[], config:{parentEmail:'',veille:false,matin:false,uneHeure:false}};
 var tab = 'home', fCours = '', fMonth = today().slice(0,7), calMonth = today().slice(0,7), bEdited = false;
 var STAT = ['Prévue','Faite','Annulée','Reportée'];
 var DAYS = ['Lun','Mar','Mer','Jeu','Ven','Sam','Dim'];
@@ -691,17 +691,26 @@ function vPaie(){
 }
 
 function vSet(){
+  var cfg=D.config||{};
   return '<div class="card"><div class="row"><span class="em" style="font-size:22px">🔗</span>'
     +'<div class="grow"><b>URL de l\'API (Apps Script)</b><div class="sub" style="word-break:break-all">'+esc(apiUrl()||'—')+'</div></div>'
     +'<button class="b" onclick="changeApiUrl()">Modifier</button></div></div>'
     +'<div class="card"><div class="row"><span class="em" style="font-size:22px">📲</span>'
     +'<div class="grow"><b>Installer sur l\'écran d\'accueil</b><div class="sub">Accès rapide, en plein écran, comme une vraie appli.</div></div>'
     +'<button class="b p" onclick="installHelp()">Installer</button></div></div>'
+    +'<div class="card"><h2 style="margin:0 0 4px">📧 Rappels par email</h2>'
+    +'<div class="sub" style="margin-bottom:8px">Envoyés directement dans l\'agenda des parents (et de l\'enfant si son email est renseigné).</div>'
+    +'<label>Email des parents</label><input id="cfg-email" value="'+esc(cfg.parentEmail||'')+'" placeholder="parent@exemple.com">'
+    +'<label class="chk" style="margin-top:8px"><input type="checkbox" id="cfg-veille"'+(cfg.veille?' checked':'')+'> La veille au soir (programme du lendemain)</label>'
+    +'<label class="chk"><input type="checkbox" id="cfg-matin"'+(cfg.matin?' checked':'')+'> Le matin (programme du jour)</label>'
+    +'<label class="chk"><input type="checkbox" id="cfg-1h"'+(cfg.uneHeure?' checked':'')+'> 1h avant un cours particulier <b>payant</b></label>'
+    +'<div class="actions"><button class="b p" onclick="saveConfigForm()">Enregistrer</button></div></div>'
     +D.enfants.map(function(e){
     var cs=D.cours.filter(function(c){return same(c.EnfantID,e.ID);});
     return '<div class="card" data-eid="'+e.ID+'"><label>Enfant</label><div class="g2b"><input class="e-nom" value="'+esc(e.Nom)+'">'
-      +'<button class="b" onclick="saveEnfantNom(this)">Renommer</button>'
+      +'<button class="b" onclick="saveEnfantNom(this)">Enregistrer</button>'
       +'<button class="b d" onclick="delEnfant(\''+e.ID+'\')">🗑 Supprimer</button></div>'
+      +'<label>Email de l\'enfant (pour ses rappels 1h avant)</label><input class="e-email" value="'+esc(e.Email||'')+'" placeholder="enfant@exemple.com">'
       +cs.map(function(c){
         var j=String(c.Jours||'').split(',').map(function(x){return x.trim();});
         return '<div class="course" data-id="'+c.ID+'">'
@@ -722,7 +731,18 @@ function vSet(){
   +'<p class="sub">Les séances prévues sont créées automatiquement à la création du cours et à chaque nouveau paiement, selon les jours habituels. Le mois commence le jour du paiement, et le cycle suivant s\'ouvre tout seul dès que le précédent se termine.</p>';
 }
 
-function saveEnfantNom(btn){var c=btn.closest('.card');call('saveEnfant',{ID:c.dataset.eid,Nom:c.querySelector('.e-nom').value.trim()});}
+function saveEnfantNom(btn){
+  var c=btn.closest('.card');
+  call('saveEnfant',{ID:c.dataset.eid,Nom:c.querySelector('.e-nom').value.trim(),Email:c.querySelector('.e-email').value.trim()});
+}
+function saveConfigForm(){
+  call('saveConfig',{
+    parentEmail:v('cfg-email').trim(),
+    veille:document.getElementById('cfg-veille').checked,
+    matin:document.getElementById('cfg-matin').checked,
+    uneHeure:document.getElementById('cfg-1h').checked
+  });
+}
 function newEnfant(){var n=prompt('Prénom ?');if(n)call('saveEnfant',{Nom:n.trim()});}
 function delEnfant(id){
   var nb=D.cours.filter(function(c){return same(c.EnfantID,id);}).length;

@@ -96,10 +96,11 @@
   .crumbs{padding:2px 2px 10px;font-size:13px;color:var(--mut);word-break:break-word}
   .crumbs a{color:var(--pri);cursor:pointer;text-decoration:none}
   .crumbs a:hover{text-decoration:underline}
-  table.emploi{border-collapse:collapse;width:100%;min-width:680px;font-size:12px}
+  table.emploi{border-collapse:collapse;width:100%;min-width:900px;font-size:12px}
   table.emploi th,table.emploi td{border:1px solid var(--bd);padding:4px 6px;vertical-align:top;text-align:left}
-  table.emploi th{background:var(--bg);position:sticky;top:0}
-  table.emploi td.heure{white-space:nowrap;font-weight:700;background:var(--bg)}
+  table.emploi th{background:var(--bg);position:sticky;top:0;white-space:nowrap}
+  table.emploi td{min-width:120px}
+  table.emploi td.heure{white-space:nowrap;font-weight:700;background:var(--bg);min-width:auto}
   table.emploi .cell{border-radius:6px;padding:3px 5px;margin-bottom:3px;font-size:11.5px;line-height:1.3}
   table.emploi .cell.ecole{background:#eef1fb;cursor:pointer}
   table.emploi .cell.cours{background:#fff3e0}
@@ -121,7 +122,7 @@
 <div id="modal" class="modal hidden" onclick="if(event.target===this)closeM()"><div class="box" id="box"></div></div>
 
 <script>
-var DEFAULT_API_URL = 'https://script.google.com/macros/s/AKfycbwq_NB20GalEiIs_0znUAkjl0eFpa7tK9P02eLX-Muhchrgs7HCI4PgH1Dn7ZgRO9A5/exec';
+var DEFAULT_API_URL = 'https://script.google.com/macros/s/AKfycbwAGd1SyojhxO4b_WW4QNl2K7AoiKNXwjv2l8gmI_Y/dev';
 var D = {enfants:[], cours:[], seances:[], paiements:[], ecole:[]};
 var tab = 'home', fCours = '', fMonth = today().slice(0,7), calMonth = today().slice(0,7), bEdited = false;
 var STAT = ['Prévue','Faite','Annulée','Reportée'];
@@ -346,13 +347,14 @@ function buildGrille_(){
   var labels=Object.keys(slots).sort(function(a,b){return slots[a].start-slots[b].start;});
   return labels.map(function(l){return {label:l,byDay:slots[l].byDay};});
 }
+var WEEK_GRID=['Dim','Lun','Mar','Mer','Jeu','Ven','Sam'];
 function vGrilleEmploi(){
-  var rows=buildGrille_();
-  var head='<tr><th>Heure</th>'+DAYS.map(function(d){return '<th>'+d+'</th>';}).join('')+'</tr>';
-  var body=!rows.length?'<tr><td colspan="8"><div class="empty">Aucun créneau pour l\'instant.</div></td></tr>'
-    :rows.map(function(r){
-      return '<tr><td class="heure">'+esc(r.label)+'</td>'+DAYS.map(function(d){
-        return '<td>'+((r.byDay[d]||[]).join(''))+'</td>';
+  var cols=buildGrille_();
+  var head='<tr><th>Jour</th>'+cols.map(function(c){return '<th>'+esc(c.label)+'</th>';}).join('')+'</tr>';
+  var body=!cols.length?'<tr><td><div class="empty">Aucun créneau pour l\'instant.</div></td></tr>'
+    :WEEK_GRID.map(function(d){
+      return '<tr><td class="heure">'+d+'</td>'+cols.map(function(c){
+        return '<td>'+((c.byDay[d]||[]).join(''))+'</td>';
       }).join('')+'</tr>';
     }).join('');
   return '<div class="card grid-print"><div class="row" style="padding:0 0 10px;border:0;flex-wrap:wrap">'

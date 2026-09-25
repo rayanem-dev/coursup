@@ -148,7 +148,7 @@
 <div id="modal" class="modal hidden" onclick="if(event.target===this)closeM()"><div class="box" id="box"></div></div>
 
 <script>
-var DEFAULT_API_URL = 'https://script.google.com/macros/s/AKfycbwq_NB20GalEiIs_0znUAkjl0eFpa7tK9P02eLX-Muhchrgs7HCI4PgH1Dn7ZgRO9A5/exec';
+var DEFAULT_API_URL = 'https://script.google.com/macros/s/AKfycbwAGd1SyojhxO4b_WW4QNl2K7AoiKNXwjv2l8gmI_Y/dev';
 var D = {enfants:[], cours:[], seances:[], paiements:[], ecole:[], config:{parentEmail:'',veille:false,matin:false,uneHeure:false}};
 var tab = 'home', fCours = '', fMonth = today().slice(0,7), calMonth = today().slice(0,7), bEdited = false;
 var STAT = ['Prévue','Faite','Annulée','Reportée'];
@@ -698,13 +698,16 @@ function vSet(){
     +'<div class="card"><div class="row"><span class="em" style="font-size:22px">📲</span>'
     +'<div class="grow"><b>Installer sur l\'écran d\'accueil</b><div class="sub">Accès rapide, en plein écran, comme une vraie appli.</div></div>'
     +'<button class="b p" onclick="installHelp()">Installer</button></div></div>'
-    +'<div class="card"><h2 style="margin:0 0 4px">📧 Rappels par email</h2>'
-    +'<div class="sub" style="margin-bottom:8px">Envoyés directement dans l\'agenda des parents (et de l\'enfant si son email est renseigné).</div>'
+    +'<div class="card"><h2 style="margin:0 0 4px">🔔 Rappels dans Google Agenda</h2>'
+    +'<div class="sub" style="margin-bottom:8px">De vrais événements créés dans l\'agenda Google (avec alarme/notification sur le téléphone), pas juste un email. Le parent et l\'enfant sont invités s\'ils ont un email renseigné.</div>'
     +'<label>Email des parents</label><input id="cfg-email" value="'+esc(cfg.parentEmail||'')+'" placeholder="parent@exemple.com">'
-    +'<label class="chk" style="margin-top:8px"><input type="checkbox" id="cfg-veille"'+(cfg.veille?' checked':'')+'> La veille au soir (programme du lendemain)</label>'
-    +'<label class="chk"><input type="checkbox" id="cfg-matin"'+(cfg.matin?' checked':'')+'> Le matin (programme du jour)</label>'
+    +'<label class="chk" style="margin-top:8px"><input type="checkbox" id="cfg-veille"'+(cfg.veille?' checked':'')+'> La veille (1 jour avant)</label>'
+    +'<label class="chk"><input type="checkbox" id="cfg-matin"'+(cfg.matin?' checked':'')+'> Le matin même (~7h00)</label>'
     +'<label class="chk"><input type="checkbox" id="cfg-1h"'+(cfg.uneHeure?' checked':'')+'> 1h avant un cours particulier <b>payant</b></label>'
-    +'<div class="actions"><button class="b p" onclick="saveConfigForm()">Enregistrer</button></div></div>'
+    +'<div class="actions"><button class="b p" onclick="saveConfigForm()">Enregistrer</button>'
+    +'<button class="b" onclick="syncNow()">🔄 Synchroniser maintenant</button>'
+    +'<button class="b" onclick="resyncNow()">♻️ Tout resynchroniser</button></div>'
+    +'<div class="sub" style="margin-top:6px">Sans le déclencheur automatique installé une fois dans Apps Script (voir dernier message), il faut cliquer "Synchroniser" pour créer les événements. Après un changement de préférences, utilise "Tout resynchroniser" pour que ça s\'applique aux événements déjà créés.</div></div>'
     +D.enfants.map(function(e){
     var cs=D.cours.filter(function(c){return same(c.EnfantID,e.ID);});
     return '<div class="card" data-eid="'+e.ID+'"><label>Enfant</label><div class="g2b"><input class="e-nom" value="'+esc(e.Nom)+'">'
@@ -741,6 +744,27 @@ function saveConfigForm(){
     veille:document.getElementById('cfg-veille').checked,
     matin:document.getElementById('cfg-matin').checked,
     uneHeure:document.getElementById('cfg-1h').checked
+  });
+}
+function syncNow(){
+  document.getElementById('app').style.opacity=.5;
+  apiCall('syncCalendrierManuel',[]).then(function(res){
+    document.getElementById('app').style.opacity=1;
+    alert((res&&res.n)?res.n+' événement(s) créé(s) dans Google Agenda.':'Rien de nouveau à créer (déjà à jour, ou aucun rappel activé).');
+  }).catch(function(e){
+    document.getElementById('app').style.opacity=1;
+    alert(e.message||e);
+  });
+}
+function resyncNow(){
+  if(!confirm('Supprime tous les événements déjà créés dans Google Agenda puis les recrée avec les préférences actuelles. Continuer ?'))return;
+  document.getElementById('app').style.opacity=.5;
+  apiCall('resyncCalendrier',[]).then(function(res){
+    document.getElementById('app').style.opacity=1;
+    alert((res&&res.n)?res.n+' événement(s) recréé(s).':'Terminé.');
+  }).catch(function(e){
+    document.getElementById('app').style.opacity=1;
+    alert(e.message||e);
   });
 }
 function newEnfant(){var n=prompt('Prénom ?');if(n)call('saveEnfant',{Nom:n.trim()});}

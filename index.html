@@ -149,7 +149,7 @@
 
 <script>
 var DEFAULT_API_URL = 'https://script.google.com/macros/s/AKfycbwAGd1SyojhxO4b_WW4QNl2K7AoiKNXwjv2l8gmI_Y/dev';
-var D = {enfants:[], cours:[], seances:[], paiements:[], ecole:[], config:{parentEmail:'',veille:false,matin:false,uneHeure:false}};
+var D = {enfants:[], cours:[], seances:[], paiements:[], ecole:[], config:{emailPere:'',emailMere:'',veille:false,matin:false,uneHeure:false}};
 var tab = 'home', fCours = '', fMonth = today().slice(0,7), calMonth = today().slice(0,7), bEdited = false;
 var STAT = ['Prévue','Faite','Annulée','Reportée'];
 var DAYS = ['Lun','Mar','Mer','Jeu','Ven','Sam','Dim'];
@@ -700,7 +700,8 @@ function vSet(){
     +'<button class="b p" onclick="installHelp()">Installer</button></div></div>'
     +'<div class="card"><h2 style="margin:0 0 4px">🔔 Rappels dans Google Agenda</h2>'
     +'<div class="sub" style="margin-bottom:8px">De vrais événements créés dans l\'agenda Google (avec alarme/notification sur le téléphone), pas juste un email. Le parent et l\'enfant sont invités s\'ils ont un email renseigné.</div>'
-    +'<label>Email des parents</label><input id="cfg-email" value="'+esc(cfg.parentEmail||'')+'" placeholder="parent@exemple.com">'
+    +'<div class="g2"><div><label>Email du père</label><input id="cfg-email-p" value="'+esc(cfg.emailPere||'')+'" placeholder="papa@exemple.com"></div>'
+    +'<div><label>Email de la mère</label><input id="cfg-email-m" value="'+esc(cfg.emailMere||'')+'" placeholder="maman@exemple.com"></div></div>'
     +'<label class="chk" style="margin-top:8px"><input type="checkbox" id="cfg-veille"'+(cfg.veille?' checked':'')+'> La veille (1 jour avant)</label>'
     +'<label class="chk"><input type="checkbox" id="cfg-matin"'+(cfg.matin?' checked':'')+'> Le matin même (~7h00)</label>'
     +'<label class="chk"><input type="checkbox" id="cfg-1h"'+(cfg.uneHeure?' checked':'')+'> 1h avant un cours particulier <b>payant</b></label>'
@@ -740,7 +741,8 @@ function saveEnfantNom(btn){
 }
 function saveConfigForm(){
   call('saveConfig',{
-    parentEmail:v('cfg-email').trim(),
+    emailPere:v('cfg-email-p').trim(),
+    emailMere:v('cfg-email-m').trim(),
     veille:document.getElementById('cfg-veille').checked,
     matin:document.getElementById('cfg-matin').checked,
     uneHeure:document.getElementById('cfg-1h').checked

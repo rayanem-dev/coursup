@@ -322,9 +322,15 @@ function buildGrille_(){
     if(!slots[label].byDay[day])slots[label].byDay[day]=[];
     slots[label].byDay[day].push(html);
   }
+  var seenEcole={};
   (D.ecole||[]).forEach(function(x){
     var r=parseRange(x.Horaire);
     var label=r?r.label:(x.Horaire||'?');
+    // Si les deux enfants sont dans la même classe, le même créneau est importé pour
+    // chacun : on ne l'affiche qu'une fois par jour/heure/matière au lieu de l'empiler.
+    var key=x.Jour+'|'+label+'|'+subjNorm(x.Matiere);
+    if(seenEcole[key])return;
+    seenEcole[key]=true;
     add(x.Jour,label,r?r.start:9999,
       '<div class="cell ecole" onclick="openEcole(\''+x.ID+'\')"><span>🏫</span>'+subjIconBig(x.Matiere)+' <span dir="auto">'+esc(x.Matiere)+'</span></div>');
   });

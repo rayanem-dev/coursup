@@ -96,17 +96,16 @@
   .crumbs{padding:2px 2px 10px;font-size:13px;color:var(--mut);word-break:break-word}
   .crumbs a{color:var(--pri);cursor:pointer;text-decoration:none}
   .crumbs a:hover{text-decoration:underline}
-  table.emploi{border-collapse:separate;border-spacing:0;width:100%;font-size:12px}
-  table.emploi th,table.emploi td{border:1px solid var(--bd);padding:4px 6px;vertical-align:top;text-align:left}
-  table.emploi th{background:var(--bg);position:sticky;top:0;white-space:nowrap;z-index:2}
-  table.emploi td{min-width:92px}
+  table.emploi{border-collapse:separate;border-spacing:0;width:100%;table-layout:fixed;font-size:11px}
+  table.emploi th,table.emploi td{border:1px solid var(--bd);padding:3px 4px;vertical-align:top;text-align:left;overflow-wrap:break-word;word-break:break-word}
+  table.emploi th{background:var(--bg);position:sticky;top:0;white-space:normal;z-index:2}
   table.emploi th:first-child,table.emploi td.heure{
-    position:sticky;left:0;white-space:nowrap;font-weight:700;background:var(--bg);
-    min-width:auto;box-shadow:2px 0 4px -2px rgba(0,0,0,.15)
+    position:sticky;left:0;white-space:normal;font-weight:700;background:var(--bg);
+    width:46px;box-shadow:2px 0 4px -2px rgba(0,0,0,.15)
   }
   table.emploi th:first-child{z-index:3}
   table.emploi td.heure{z-index:1}
-  table.emploi .cell{border-radius:6px;padding:3px 5px;margin-bottom:3px;font-size:11.5px;line-height:1.3}
+  table.emploi .cell{border-radius:6px;padding:2px 4px;margin-bottom:3px;font-size:10px;line-height:1.25}
   table.emploi .cell.ecole{background:#eef1fb;cursor:pointer}
   table.emploi .cell.cours{background:#fff3e0}
   @media print{
@@ -369,7 +368,7 @@ function vGrilleEmploi(){
     +'<button class="b" onclick="window.print()">🖨️ Imprimer</button>'
     +'<button class="b p" onclick="openEcole()">+ Créneau</button></div>'
     +'<div class="sub" style="margin-bottom:8px">Lycée (gratuit, modifiable ici) + cours particuliers. Clique un créneau du lycée pour le modifier.</div>'
-    +'<div style="overflow-x:auto"><table class="emploi">'+head+body+'</table></div></div>';
+    +'<table class="emploi">'+head+body+'</table></div>';
 }
 function openEcole(id){
   var x=id?(D.ecole||[]).find(function(o){return same(o.ID,id);}):null;

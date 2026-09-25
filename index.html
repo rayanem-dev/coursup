@@ -314,10 +314,6 @@ function parseRange(s){
   var sh=+m[1],sm=+(m[2]||0),eh=+m[3],em=+(m[4]||0);
   return {start:sh*60+sm,label:p2(sh)+':'+p2(sm)+'–'+p2(eh)+':'+p2(em)};
 }
-function timeToMin(s){
-  var m=String(s||'').match(/(\d{1,2}):(\d{2})/);
-  return m?(+m[1]*60+ +m[2]):9999;
-}
 function buildGrille_(){
   var slots={};
   function add(day,label,start,html){
@@ -327,8 +323,9 @@ function buildGrille_(){
     slots[label].byDay[day].push(html);
   }
   (D.ecole||[]).forEach(function(x){
-    var label=(x.Debut||'?')+'–'+(x.Fin||'?');
-    add(x.Jour,label,timeToMin(x.Debut),
+    var r=parseRange(x.Horaire);
+    var label=r?r.label:(x.Horaire||'?');
+    add(x.Jour,label,r?r.start:9999,
       '<div class="cell ecole" onclick="openEcole(\''+x.ID+'\')"><span>🏫</span>'+subjIconBig(x.Matiere)+' <span dir="auto">'+esc(x.Matiere)+'</span></div>');
   });
   D.cours.forEach(function(c){
@@ -362,20 +359,23 @@ function vGrilleEmploi(){
 }
 function openEcole(id){
   var x=id?(D.ecole||[]).find(function(o){return same(o.ID,id);}):null;
-  x=x||{EnfantID:D.enfants[0]?D.enfants[0].ID:'',Jour:'Lun',Debut:'08:00',Fin:'09:00',Matiere:''};
+  var r=x?parseRange(x.Horaire):null;
+  var debut=r?r.label.split('–')[0]:'08:00', fin=r?r.label.split('–')[1]:'09:00';
+  x=x||{EnfantID:D.enfants[0]?D.enfants[0].ID:'',Jour:'Lun',Matiere:''};
   showM('<h2>'+(id?'Modifier':'Nouveau')+' créneau</h2>'
     +'<label>Enfant</label><select id="e-enf">'+D.enfants.map(function(e){return '<option value="'+e.ID+'"'+(same(e.ID,x.EnfantID)?' selected':'')+'>'+esc(e.Nom)+'</option>';}).join('')+'</select>'
     +'<label>Jour</label><select id="e-jour">'+DAYS.map(function(d){return '<option'+(d===x.Jour?' selected':'')+'>'+d+'</option>';}).join('')+'</select>'
-    +'<div class="g2"><div><label>Début</label><input id="e-debut" type="time" value="'+esc(x.Debut)+'"></div>'
-    +'<div><label>Fin</label><input id="e-fin" type="time" value="'+esc(x.Fin)+'"></div></div>'
+    +'<div class="g2"><div><label>Début</label><input id="e-debut" type="time" value="'+esc(debut)+'"></div>'
+    +'<div><label>Fin</label><input id="e-fin" type="time" value="'+esc(fin)+'"></div></div>'
     +'<label>Matière</label><input id="e-mat" value="'+esc(x.Matiere)+'" placeholder="Mathématiques">'
     +'<div class="actions"><button class="b p" onclick="okEcole(\''+(id||'')+'\')">Enregistrer</button>'
     +(id?'<button class="b d" onclick="delEcole(\''+id+'\')">🗑 Supprimer</button>':'')
     +'<button class="b" onclick="closeM()">Annuler</button></div>');
 }
 function okEcole(id){
-  var o={EnfantID:v('e-enf'),Jour:v('e-jour'),Debut:v('e-debut'),Fin:v('e-fin'),Matiere:v('e-mat').trim()};
-  if(!o.Matiere){alert('Indique la matière.');return;}
+  var mat=v('e-mat').trim();
+  if(!mat){alert('Indique la matière.');return;}
+  var o={EnfantID:v('e-enf'),Jour:v('e-jour'),Horaire:v('e-debut')+'-'+v('e-fin'),Matiere:mat};
   if(id)o.ID=id;
   closeM();call('saveEcole',o);
 }
@@ -386,7 +386,7 @@ function delEcole(id){
 function openImportEcole(){
   if(!D.enfants.length){alert('Ajoute d\'abord un enfant dans Réglages.');return;}
   showM('<h2>📥 Importer l\'emploi du temps du lycée</h2>'
-    +'<p class="sub">Lit la feuille Google Sheets partagée par le lycée et crée les créneaux correspondants pour l\'enfant choisi. Ensuite tout reste librement modifiable ici (ça ne resynchronise pas avec la feuille).</p>'
+    +'<p class="sub">Lit la feuille Google Sheets partagée par le lycée et crée les créneaux correspondants pour l\'enfant choisi. ⚠️ Ça remplace <b>tous</b> les créneaux existants de cet enfant (pratique pour corriger une erreur ou mettre à jour l\'emploi du temps, mais toute modification manuelle faite entre-temps sera perdue).</p>'
     +'<label>Pour quel enfant ?</label><select id="imp-enf">'+D.enfants.map(function(e){return '<option value="'+e.ID+'">'+esc(e.Nom)+'</option>';}).join('')+'</select>'
     +'<div class="actions"><button class="b p" onclick="okImportEcole()">Importer</button><button class="b" onclick="closeM()">Annuler</button></div>');
 }

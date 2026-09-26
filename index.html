@@ -748,25 +748,34 @@ function saveConfigForm(){
     uneHeure:document.getElementById('cfg-1h').checked
   });
 }
-function syncNow(){
-  document.getElementById('app').style.opacity=.5;
-  apiCall('syncCalendrierManuel',[]).then(function(res){
-    document.getElementById('app').style.opacity=1;
-    alert((res&&res.n)?res.n+' événement(s) créé(s) dans Google Agenda.':'Rien de nouveau à créer (déjà à jour, ou aucun rappel activé).');
+function syncLoop_(action,total,onDone){
+  apiCall(action,[]).then(function(res){
+    total+=(res&&res.n)||0;
+    if(res&&res.more){
+      document.getElementById('app').innerHTML='<div class="empty">Synchronisation en cours… '+total+' créé(s) jusqu\'ici.</div>';
+      syncLoop_(action,total,onDone);
+    }else{
+      onDone(total);
+    }
   }).catch(function(e){
     document.getElementById('app').style.opacity=1;
-    alert(e.message||e);
+    alert((e.message||e)+(total?(' ('+total+' créé(s) avant l\'erreur.)'):''));
+    boot();
+  });
+}
+function syncNow(){
+  document.getElementById('app').innerHTML='<div class="empty">Synchronisation en cours…</div>';
+  syncLoop_('syncCalendrierManuel',0,function(total){
+    alert(total?total+' événement(s) créé(s) dans Google Agenda.':'Rien de nouveau à créer (déjà à jour, ou aucun rappel activé).');
+    boot();
   });
 }
 function resyncNow(){
-  if(!confirm('Supprime tous les événements déjà créés dans Google Agenda puis les recrée avec les préférences actuelles. Continuer ?'))return;
-  document.getElementById('app').style.opacity=.5;
-  apiCall('resyncCalendrier',[]).then(function(res){
-    document.getElementById('app').style.opacity=1;
-    alert((res&&res.n)?res.n+' événement(s) recréé(s).':'Terminé.');
-  }).catch(function(e){
-    document.getElementById('app').style.opacity=1;
-    alert(e.message||e);
+  if(!confirm('Supprime tous les événements déjà créés dans Google Agenda puis les recrée avec les préférences actuelles. Ça peut prendre du temps s\'il y en a beaucoup. Continuer ?'))return;
+  document.getElementById('app').innerHTML='<div class="empty">Nettoyage puis resynchronisation en cours…</div>';
+  syncLoop_('resyncCalendrier',0,function(total){
+    alert(total?total+' événement(s) recréé(s).':'Terminé.');
+    boot();
   });
 }
 function newEnfant(){var n=prompt('Prénom ?');if(n)call('saveEnfant',{Nom:n.trim()});}

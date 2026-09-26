@@ -179,7 +179,7 @@ function ccol(eid){var i=D.enfants.findIndex(function(e){return same(e.ID,eid);}
 function dowName(s){return DOW[new Date(s+'T00:00').getDay()];}
 function avatarImg(e){
   var photo=e.Photo||PHOTOS[subjNorm(e.Nom)];
-  if(photo)return '<img src="'+photo+'" alt="">';
+  if(photo)return '<img src="'+photo+'" alt="" loading="lazy">';
   return esc((e.Nom||'?').charAt(0).toUpperCase());
 }
 
@@ -233,6 +233,51 @@ function call(fn){
     D=data;document.getElementById('app').style.opacity=1;render();
   }).catch(function(e){
     document.getElementById('app').style.opacity=1;alert(e.message||e);
+  });
+}
+// Envoi en POST (Content-Type text/plain pour éviter le préflight CORS que les Web Apps
+// Apps Script ne gèrent pas). Utilisé uniquement pour l'upload de photo : le payload
+// base64 est trop volumineux pour tenir dans une URL (limite ~getData en GET).
+function apiPost(fn,args){
+  var base=apiUrl();
+  if(!base)return Promise.reject(new Error('URL API non configurée. Va dans Réglages pour la renseigner.'));
+  return fetch(base,{method:'POST',headers:{'Content-Type':'text/plain;charset=utf-8'},body:JSON.stringify({api:fn,args:args||[]})})
+    .then(function(r){if(!r.ok)throw new Error('HTTP '+r.status);return r.json();})
+    .then(function(res){if(!res.ok)throw new Error(res.error||'Erreur serveur');return res.data;});
+}
+// Redimensionne/compresse la photo dans le navigateur avant envoi (évite d'envoyer
+// une photo de téléphone de plusieurs Mo pour un simple avatar rond).
+function resizeImage(file,maxSize,quality){
+  return new Promise(function(resolve,reject){
+    var reader=new FileReader();
+    reader.onload=function(ev){
+      var img=new Image();
+      img.onload=function(){
+        var w=img.width,h=img.height;
+        if(w>h){if(w>maxSize){h=Math.round(h*maxSize/w);w=maxSize;}}
+        else{if(h>maxSize){w=Math.round(w*maxSize/h);h=maxSize;}}
+        var cv=document.createElement('canvas');cv.width=w;cv.height=h;
+        cv.getContext('2d').drawImage(img,0,0,w,h);
+        resolve(cv.toDataURL('image/jpeg',quality||0.82));
+      };
+      img.onerror=function(){reject(new Error('Image illisible'));};
+      img.src=ev.target.result;
+    };
+    reader.onerror=function(){reject(new Error('Lecture du fichier impossible'));};
+    reader.readAsDataURL(file);
+  });
+}
+function uploadEnfantPhoto(input,id){
+  var file=input.files&&input.files[0];
+  if(!file)return;
+  document.getElementById('app').style.opacity=.5;
+  resizeImage(file,480,0.82).then(function(dataUrl){
+    return apiPost('saveEnfantPhoto',[id,dataUrl]);
+  }).then(function(data){
+    D=data;document.getElementById('app').style.opacity=1;render();
+  }).catch(function(e){
+    document.getElementById('app').style.opacity=1;alert(e.message||e);
+    input.value='';
   });
 }
 
@@ -713,7 +758,13 @@ function vSet(){
     +'<div class="sub" style="margin-top:6px">Sans le déclencheur automatique installé une fois dans Apps Script (voir dernier message), il faut cliquer "Synchroniser" pour créer les événements. Après un changement de préférences, utilise "Tout resynchroniser" pour que ça s\'applique aux événements déjà créés.</div></div>'
     +D.enfants.map(function(e){
     var cs=D.cours.filter(function(c){return same(c.EnfantID,e.ID);});
-    return '<div class="card" data-eid="'+e.ID+'"><label>Enfant</label><div class="g2b"><input class="e-nom" value="'+esc(e.Nom)+'">'
+    return '<div class="card" data-eid="'+e.ID+'"><label>Enfant</label>'
+      +'<div class="row" style="margin-bottom:8px">'
+      +'<div class="avatar" style="width:44px;height:44px;background:'+ccol(e.ID)+'">'+avatarImg(e)+'</div>'
+      +'<input type="file" accept="image/*" id="photo-'+e.ID+'" style="display:none" onchange="uploadEnfantPhoto(this,\''+e.ID+'\')">'
+      +'<button class="b" onclick="document.getElementById(\'photo-'+e.ID+'\').click()">📷 Changer la photo</button>'
+      +'</div>'
+      +'<div class="g2b"><input class="e-nom" value="'+esc(e.Nom)+'">'
       +'<button class="b" onclick="saveEnfantNom(this)">Enregistrer</button>'
       +'<button class="b d" onclick="delEnfant(\''+e.ID+'\')">🗑 Supprimer</button></div>'
       +'<label>Email de l\'enfant (pour ses rappels 1h avant)</label><input class="e-email" value="'+esc(e.Email||'')+'" placeholder="enfant@exemple.com">'

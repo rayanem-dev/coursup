@@ -148,8 +148,8 @@
 <div id="modal" class="modal hidden" onclick="if(event.target===this)closeM()"><div class="box" id="box"></div></div>
 
 <script>
-var DEFAULT_API_URL = 'https://script.google.com/macros/s/AKfycbztgTfXpHNmpSmF4wXVNbv7LqFXVeSNW2N08xux8FYyjLW_jhjolPIxQTBDjHbAFU_1/exec';
-var D = {enfants:[], cours:[], seances:[], paiements:[], ecole:[], config:{emailPere:'',emailMere:'',veille:false,matin:false,uneHeure:false,ecoleAgenda:false,ecoleAlerte:false}};
+var DEFAULT_API_URL = 'https://script.google.com/macros/s/AKfycbzwI9P27o5kmeTHYy7PwEZ1na9bKPnkl1yxARu059K-rX6qgzB6L58249d8n010Dytp/exec';
+var D = {enfants:[], cours:[], seances:[], paiements:[], ecole:[], config:{emailPere:'',emailMere:'',veille:false,matin:false,uneHeure:false,ecoleAgenda:false,ecoleAlerte:false,rappelFin:true}};
 var tab = 'home', fCours = '', fMonth = today().slice(0,7), calMonth = today().slice(0,7), bEdited = false;
 var STAT = ['Prévue','Faite','Annulée','Reportée'];
 var DAYS = ['Lun','Mar','Mer','Jeu','Ven','Sam','Dim'];
@@ -761,6 +761,7 @@ function vSet(){
     +'<label class="chk" style="margin-top:4px"><input type="checkbox" id="cfg-veille"'+(cfg.veille?' checked':'')+'> La veille (1 jour avant)</label>'
     +'<label class="chk"><input type="checkbox" id="cfg-matin"'+(cfg.matin?' checked':'')+'> Le matin même (~7h00)</label>'
     +'<label class="chk"><input type="checkbox" id="cfg-1h"'+(cfg.uneHeure?' checked':'')+'> 1h avant un cours particulier <b>payant</b></label>'
+    +'<label class="chk"><input type="checkbox" id="cfg-rappel-fin"'+(cfg.rappelFin?' checked':'')+'> 🚗 Récupération : 30 min avant la <b>fin</b> du cours</label>'
     +'<p class="sub" style="margin:14px 0 2px"><b>Lycée</b> — par défaut, RIEN n\'est ajouté à l\'agenda pour le lycée.</p>'
     +'<label class="chk" style="margin-top:4px"><input type="checkbox" id="cfg-ecole-agenda" onchange="onEcoleAgendaChange()"'+(cfg.ecoleAgenda?' checked':'')+'> Ajouter les cours du <b>lycée</b> à l\'agenda de l\'enfant</label>'
     +'<label class="chk" id="cfg-ecole-alerte-wrap" style="'+(cfg.ecoleAgenda?'':'opacity:.45')+'"><input type="checkbox" id="cfg-ecole-alerte"'+(cfg.ecoleAlerte?' checked':'')+(cfg.ecoleAgenda?'':' disabled')+'> Aussi y mettre un rappel (veille / matin, comme ci-dessus)</label>'
@@ -821,7 +822,8 @@ function saveConfigForm(){
     matin:document.getElementById('cfg-matin').checked,
     uneHeure:document.getElementById('cfg-1h').checked,
     ecoleAgenda:document.getElementById('cfg-ecole-agenda').checked,
-    ecoleAlerte:document.getElementById('cfg-ecole-alerte').checked
+    ecoleAlerte:document.getElementById('cfg-ecole-alerte').checked,
+    rappelFin:document.getElementById('cfg-rappel-fin').checked
   });
 }
 function syncLoop_(action,total,onDone,echecs){

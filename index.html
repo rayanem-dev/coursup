@@ -148,7 +148,7 @@
 <div id="modal" class="modal hidden" onclick="if(event.target===this)closeM()"><div class="box" id="box"></div></div>
 
 <script>
-var DEFAULT_API_URL = 'https://script.google.com/macros/s/AKfycbwAGd1SyojhxO4b_WW4QNl2K7AoiKNXwjv2l8gmI_Y/dev';
+var DEFAULT_API_URL = 'https://script.google.com/macros/s/AKfycbwq_NB20GalEiIs_0znUAkjl0eFpa7tK9P02eLX-Muhchrgs7HCI4PgH1Dn7ZgRO9A5/exec';
 var D = {enfants:[], cours:[], seances:[], paiements:[], ecole:[], config:{emailPere:'',emailMere:'',veille:false,matin:false,uneHeure:false}};
 var tab = 'home', fCours = '', fMonth = today().slice(0,7), calMonth = today().slice(0,7), bEdited = false;
 var STAT = ['Prévue','Faite','Annulée','Reportée'];
@@ -707,7 +707,9 @@ function vSet(){
     +'<label class="chk"><input type="checkbox" id="cfg-1h"'+(cfg.uneHeure?' checked':'')+'> 1h avant un cours particulier <b>payant</b></label>'
     +'<div class="actions"><button class="b p" onclick="saveConfigForm()">Enregistrer</button>'
     +'<button class="b" onclick="syncNow()">🔄 Synchroniser maintenant</button>'
-    +'<button class="b" onclick="resyncNow()">♻️ Tout resynchroniser</button></div>'
+    +'<button class="b" onclick="resyncNow()">♻️ Tout resynchroniser</button>'
+    +'<button class="b d" onclick="deleteAllNow()">🗑 Supprimer toutes les alertes</button>'
+    +'<button class="b" onclick="testAlerteNow()">🔔 Tester une alerte maintenant</button></div>'
     +'<div class="sub" style="margin-top:6px">Sans le déclencheur automatique installé une fois dans Apps Script (voir dernier message), il faut cliquer "Synchroniser" pour créer les événements. Après un changement de préférences, utilise "Tout resynchroniser" pour que ça s\'applique aux événements déjà créés.</div></div>'
     +D.enfants.map(function(e){
     var cs=D.cours.filter(function(c){return same(c.EnfantID,e.ID);});
@@ -776,6 +778,24 @@ function resyncNow(){
   syncLoop_('resyncCalendrier',0,function(total){
     alert(total?total+' événement(s) recréé(s).':'Terminé.');
     boot();
+  });
+}
+function deleteAllNow(){
+  if(!confirm('Supprime définitivement toutes les alertes déjà créées dans Google Agenda (sans les recréer). Continuer ?'))return;
+  document.getElementById('app').innerHTML='<div class="empty">Suppression en cours…</div>';
+  syncLoop_('supprimerToutesAlertes',0,function(total){
+    alert(total?total+' alerte(s) supprimée(s).':'Aucune alerte à supprimer.');
+    boot();
+  });
+}
+function testAlerteNow(){
+  document.getElementById('app').style.opacity=.5;
+  apiCall('testAlerte',[]).then(function(res){
+    document.getElementById('app').style.opacity=1;
+    alert('Événement de test créé (aujourd\'hui à '+(res&&res.heure||'?')+'), avec une alerte programmée environ 1 minute après. Regarde ton agenda/téléphone. Tu peux le supprimer une fois vérifié.');
+  }).catch(function(e){
+    document.getElementById('app').style.opacity=1;
+    alert(e.message||e);
   });
 }
 function newEnfant(){var n=prompt('Prénom ?');if(n)call('saveEnfant',{Nom:n.trim()});}

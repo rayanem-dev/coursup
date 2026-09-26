@@ -624,8 +624,17 @@ function vDash(){
 
 function vTodo(){
   var t=today();
+  function heureDebut(s){
+    var h=(crs(s.CoursID).Heure||'').split('-')[0].trim();
+    return h||'99:99'; // sans heure renseignée -> affiché en dernier sur sa journée
+  }
   var all=D.seances.filter(function(s){return s.Statut==='Prévue';})
-    .sort(function(a,b){return a.Date<b.Date?-1:1;});
+    .sort(function(a,b){
+      var da=String(a.Date).slice(0,10), db=String(b.Date).slice(0,10);
+      if(da!==db)return da<db?-1:1;
+      var ha=heureDebut(a), hb=heureDebut(b);
+      return ha<hb?-1:(ha>hb?1:0);
+    });
   if(!all.length)return '';
   return '<div class="card"><div class="head"><h2>✅ Séances à venir</h2><span class="badge Prévue">'+all.length+'</span></div>'
     +'<div class="sub">Coche la case quand la séance a eu lieu. Pour une séance passée non faite, clique sur « Non faite » pour la décaler.</div>'

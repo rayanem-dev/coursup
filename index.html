@@ -149,7 +149,7 @@
 
 <script>
 var DEFAULT_API_URL = 'https://script.google.com/macros/s/AKfycbzwI9P27o5kmeTHYy7PwEZ1na9bKPnkl1yxARu059K-rX6qgzB6L58249d8n010Dytp/exec';
-var D = {enfants:[], cours:[], seances:[], paiements:[], ecole:[], config:{emailPere:'',emailMere:'',veille:false,matin:false,uneHeure:false,ecole:false}};
+var D = {enfants:[], cours:[], seances:[], paiements:[], ecole:[], config:{emailPere:'',emailMere:'',veille:false,matin:false,uneHeure:false,ecoleAgenda:false,ecoleAlerte:false}};
 var tab = 'home', fCours = '', fMonth = today().slice(0,7), calMonth = today().slice(0,7), bEdited = false;
 var STAT = ['Prévue','Faite','Annulée','Reportée'];
 var DAYS = ['Lun','Mar','Mer','Jeu','Ven','Sam','Dim'];
@@ -753,14 +753,17 @@ function vSet(){
     +'<div class="grow"><b>Installer sur l\'écran d\'accueil</b><div class="sub">Accès rapide, en plein écran, comme une vraie appli.</div></div>'
     +'<button class="b p" onclick="installHelp()">Installer</button></div></div>'
     +'<div class="card"><h2 style="margin:0 0 4px">🔔 Rappels dans Google Agenda</h2>'
-    +'<div class="sub" style="margin-bottom:8px">De vrais événements créés dans l\'agenda Google (avec alarme/notification sur le téléphone), pas juste un email. Le parent et l\'enfant sont invités s\'ils ont un email renseigné.</div>'
-    +'<div class="sub" style="margin-bottom:8px"><b>Ne concerne que les cours particuliers.</b> Le lycée est ajouté à l\'agenda sans rappel, sauf si la case ci-dessous est cochée.</div>'
+    +'<div class="sub" style="margin-bottom:8px">De vrais événements créés dans l\'agenda Google (avec alarme/notification sur le téléphone), pas juste un email.</div>'
+    +'<div class="sub" style="margin-bottom:4px"><b>Rappel important :</b> Google Agenda ne permet pas de forcer une alarme chez quelqu\'un d\'autre. L\'alarme se déclenche automatiquement sur le compte propriétaire de cet agenda ; pour que les autres invités (l\'autre parent, les enfants) soient aussi alertés automatiquement, chacun doit activer, dans <i>ses propres</i> réglages Google Agenda, la notification pour les événements où il est invité. Ils reçoivent en revanche toujours l\'invitation elle-même.</div>'
     +'<div class="g2"><div><label>Email du père</label><input id="cfg-email-p" value="'+esc(cfg.emailPere||'')+'" placeholder="papa@exemple.com"></div>'
     +'<div><label>Email de la mère</label><input id="cfg-email-m" value="'+esc(cfg.emailMere||'')+'" placeholder="maman@exemple.com"></div></div>'
-    +'<label class="chk" style="margin-top:8px"><input type="checkbox" id="cfg-veille"'+(cfg.veille?' checked':'')+'> La veille (1 jour avant)</label>'
+    +'<p class="sub" style="margin:10px 0 2px"><b>Cours particuliers</b> — le parent et l\'enfant sont invités s\'ils ont un email renseigné.</p>'
+    +'<label class="chk" style="margin-top:4px"><input type="checkbox" id="cfg-veille"'+(cfg.veille?' checked':'')+'> La veille (1 jour avant)</label>'
     +'<label class="chk"><input type="checkbox" id="cfg-matin"'+(cfg.matin?' checked':'')+'> Le matin même (~7h00)</label>'
     +'<label class="chk"><input type="checkbox" id="cfg-1h"'+(cfg.uneHeure?' checked':'')+'> 1h avant un cours particulier <b>payant</b></label>'
-    +'<label class="chk"><input type="checkbox" id="cfg-ecole"'+(cfg.ecole?' checked':'')+'> Aussi rappeler les cours du <b>lycée</b> (veille / matin, comme ci-dessus) — <span class="sub">l\'enfant seul est invité, pas les parents</span></label>'
+    +'<p class="sub" style="margin:14px 0 2px"><b>Lycée</b> — par défaut, RIEN n\'est ajouté à l\'agenda pour le lycée. Seul l\'enfant concerné peut être invité, jamais les parents.</p>'
+    +'<label class="chk" style="margin-top:4px"><input type="checkbox" id="cfg-ecole-agenda" onchange="onEcoleAgendaChange()"'+(cfg.ecoleAgenda?' checked':'')+'> Ajouter les cours du <b>lycée</b> à l\'agenda de l\'enfant</label>'
+    +'<label class="chk" id="cfg-ecole-alerte-wrap" style="'+(cfg.ecoleAgenda?'':'opacity:.45')+'"><input type="checkbox" id="cfg-ecole-alerte"'+(cfg.ecoleAlerte?' checked':'')+(cfg.ecoleAgenda?'':' disabled')+'> Aussi y mettre un rappel (veille / matin, comme ci-dessus)</label>'
     +'<div class="actions"><button class="b p" onclick="saveConfigForm()">Enregistrer</button>'
     +'<button class="b" onclick="syncNow()">🔄 Synchroniser maintenant</button>'
     +'<button class="b" onclick="resyncNow()">♻️ Tout resynchroniser</button>'
@@ -803,6 +806,13 @@ function saveEnfantNom(btn){
   var c=btn.closest('.card');
   call('saveEnfant',{ID:c.dataset.eid,Nom:c.querySelector('.e-nom').value.trim(),Email:c.querySelector('.e-email').value.trim()});
 }
+function onEcoleAgendaChange(){
+  var on=document.getElementById('cfg-ecole-agenda').checked;
+  var alerte=document.getElementById('cfg-ecole-alerte');
+  alerte.disabled=!on;
+  if(!on)alerte.checked=false;
+  document.getElementById('cfg-ecole-alerte-wrap').style.opacity=on?'1':'.45';
+}
 function saveConfigForm(){
   call('saveConfig',{
     emailPere:v('cfg-email-p').trim(),
@@ -810,7 +820,8 @@ function saveConfigForm(){
     veille:document.getElementById('cfg-veille').checked,
     matin:document.getElementById('cfg-matin').checked,
     uneHeure:document.getElementById('cfg-1h').checked,
-    ecole:document.getElementById('cfg-ecole').checked
+    ecoleAgenda:document.getElementById('cfg-ecole-agenda').checked,
+    ecoleAlerte:document.getElementById('cfg-ecole-alerte').checked
   });
 }
 function syncLoop_(action,total,onDone){

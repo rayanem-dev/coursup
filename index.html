@@ -824,14 +824,16 @@ function saveConfigForm(){
     ecoleAlerte:document.getElementById('cfg-ecole-alerte').checked
   });
 }
-function syncLoop_(action,total,onDone){
+function syncLoop_(action,total,onDone,echecs){
+  echecs=echecs||[];
   apiCall(action,[]).then(function(res){
     total+=(res&&res.n)||0;
+    if(res&&res.echecs&&res.echecs.length)echecs=echecs.concat(res.echecs);
     if(res&&res.more){
       document.getElementById('app').innerHTML='<div class="empty">Synchronisation en cours… '+total+' créé(s) jusqu\'ici.</div>';
-      syncLoop_(action,total,onDone);
+      syncLoop_(action,total,onDone,echecs);
     }else{
-      onDone(total);
+      onDone(total,echecs);
     }
   }).catch(function(e){
     document.getElementById('app').style.opacity=1;
@@ -839,18 +841,22 @@ function syncLoop_(action,total,onDone){
     boot();
   });
 }
+function echecsMsg_(echecs){
+  if(!echecs||!echecs.length)return'';
+  return '\n\n⚠️ '+echecs.length+' invitation(s) n\'ont pas pu être envoyées :\n- '+echecs.join('\n- ');
+}
 function syncNow(){
   document.getElementById('app').innerHTML='<div class="empty">Synchronisation en cours…</div>';
-  syncLoop_('syncCalendrierManuel',0,function(total){
-    alert(total?total+' événement(s) créé(s) dans Google Agenda.':'Rien de nouveau à créer (déjà à jour, ou aucun rappel activé).');
+  syncLoop_('syncCalendrierManuel',0,function(total,echecs){
+    alert((total?total+' événement(s) créé(s) dans Google Agenda.':'Rien de nouveau à créer (déjà à jour, ou aucun rappel activé).')+echecsMsg_(echecs));
     boot();
   });
 }
 function resyncNow(){
   if(!confirm('Supprime tous les événements déjà créés dans Google Agenda puis les recrée avec les préférences actuelles. Ça peut prendre du temps s\'il y en a beaucoup. Continuer ?'))return;
   document.getElementById('app').innerHTML='<div class="empty">Nettoyage puis resynchronisation en cours…</div>';
-  syncLoop_('resyncCalendrier',0,function(total){
-    alert(total?total+' événement(s) recréé(s).':'Terminé.');
+  syncLoop_('resyncCalendrier',0,function(total,echecs){
+    alert((total?total+' événement(s) recréé(s).':'Terminé.')+echecsMsg_(echecs));
     boot();
   });
 }
@@ -866,7 +872,7 @@ function testAlerteNow(){
   document.getElementById('app').style.opacity=.5;
   apiCall('testAlerte',[]).then(function(res){
     document.getElementById('app').style.opacity=1;
-    alert('Événement de test créé (aujourd\'hui à '+(res&&res.heure||'?')+'), avec une alerte programmée environ 1 minute après. Regarde ton agenda/téléphone. Tu peux le supprimer une fois vérifié.');
+    alert('Événement de test créé (aujourd\'hui à '+(res&&res.heure||'?')+'), avec une alerte programmée environ 1 minute après. Regarde ton agenda/téléphone. Tu peux le supprimer une fois vérifié.'+echecsMsg_(res&&res.echecs));
   }).catch(function(e){
     document.getElementById('app').style.opacity=1;
     alert(e.message||e);

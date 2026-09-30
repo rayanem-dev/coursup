@@ -173,9 +173,20 @@ function fd(s){var d=new Date(String(s).slice(0,10)+'T00:00');return isNaN(d)?s:
 function fs(s){var d=new Date(String(s).slice(0,10)+'T00:00');return isNaN(d)?s:d.toLocaleDateString('fr-FR',{day:'numeric',month:'short'});}
 function v(id){return document.getElementById(id).value;}
 function same(a,b){return String(a)===String(b);}
-function enf(id){return D.enfants.find(function(e){return same(e.ID,id);})||{Nom:'?'};}
-function crs(id){return D.cours.find(function(c){return same(c.ID,id);})||{Matiere:'?',PrixMois:0,SeancesMois:8};}
-function seance(id){return D.seances.find(function(s){return same(s.ID,id);});}
+var IDX=null, CY={};
+function setD(d){D=d;IDX=null;CY={};}
+function idx(){
+  if(!IDX){
+    IDX={enf:{},crs:{},ses:{}};
+    D.enfants.forEach(function(e){IDX.enf[String(e.ID)]=e;});
+    D.cours.forEach(function(c){IDX.crs[String(c.ID)]=c;});
+    D.seances.forEach(function(x){IDX.ses[String(x.ID)]=x;});
+  }
+  return IDX;
+}
+function enf(id){return idx().enf[String(id)]||{Nom:'?'};}
+function crs(id){return idx().crs[String(id)]||{Matiere:'?',PrixMois:0,SeancesMois:8};}
+function seance(id){return idx().ses[String(id)];}
 function cname(c){return enf(c.EnfantID).Nom+' — '+c.Matiere+(c.Prof?' ('+c.Prof+')':'');}
 function choraire(c){return c&&c.Heure?' · '+esc(c.Heure):'';}
 function ccol(eid){var i=D.enfants.findIndex(function(e){return same(e.ID,eid);});return PAL[(i<0?0:i)%PAL.length];}
@@ -229,14 +240,27 @@ function apiCall(fn, args){
     return res.data;
   });
 }
+var Q=Promise.resolve(), pendingCalls=0;
+function busy_(on){document.getElementById('app').style.opacity=on?.5:1;}
+// Les écritures sont exécutées l'une après l'autre (évite les courses sur la feuille),
+// et seul le résultat de la dernière met à jour l'écran.
 function call(fn){
   var args=[].slice.call(arguments,1);
-  document.getElementById('app').style.opacity=.5;
-  apiCall(fn,args).then(function(data){
-    D=data;cacheData();document.getElementById('app').style.opacity=1;render();
-  }).catch(function(e){
-    document.getElementById('app').style.opacity=1;alert(e.message||e);
+  return callQ_(fn,args,false);
+}
+function callQ_(fn,args,quiet){
+  pendingCalls++;
+  if(!quiet)busy_(true);
+  Q=Q.then(function(){return apiCall(fn,args);}).then(function(data){
+    pendingCalls--;
+    if(!pendingCalls){setD(data);cacheData();busy_(false);render();}
+  },function(e){
+    pendingCalls--;
+    if(!pendingCalls)busy_(false);
+    alert(e.message||e);
+    if(!pendingCalls)boot();
   });
+  return Q;
 }
 function cacheData(){try{localStorage.setItem('cours_data_cache',JSON.stringify(D));}catch(e){}}
 // Envoi en POST (Content-Type text/plain pour éviter le préflight CORS que les Web Apps
@@ -278,7 +302,7 @@ function uploadEnfantPhoto(input,id){
   resizeImage(file,480,0.82).then(function(dataUrl){
     return apiPost('saveEnfantPhoto',[id,dataUrl]);
   }).then(function(data){
-    D=data;document.getElementById('app').style.opacity=1;render();
+    setD(data);cacheData();document.getElementById('app').style.opacity=1;render();
   }).catch(function(e){
     document.getElementById('app').style.opacity=1;alert(e.message||e);
     input.value='';
@@ -293,6 +317,10 @@ function addMonth(s,n){
 function pstart(x){var m=String(x.Mois||x.Date).slice(0,10);return m.length===7?m+'-01':m;}
 
 function cycles(c){
+  var k=String(c.ID);
+  return CY[k]||(CY[k]=cycles_(c));
+}
+function cycles_(c){
   var set={};
   D.paiements.forEach(function(x){if(same(x.CoursID,c.ID))set[pstart(x)]=1;});
   var ss=Object.keys(set).sort();
@@ -361,6 +389,7 @@ function nextDate(c,after){
 }
 
 function render(){
+  CY={};
   if(fCours&&!D.cours.some(function(c){return same(c.ID,fCours);}))fCours='';
   document.getElementById('tabs').innerHTML=TABS.map(function(t){
     return '<button class="'+(tab===t[0]?'on':'')+'" onclick="tab=\''+t[0]+'\';render()">'+t[1]+'</button>';}).join('');
@@ -901,7 +930,12 @@ function saveCoursForm(btn){
     PrixMois:Number(c.querySelector('.c-prix').value)||0,SeancesMois:Number(c.querySelector('.c-nb').value)||8,Jours:jours,
     Heure:c.querySelector('.c-heure').value.trim()});
 }
-function setStat(id,st){closeM();call('saveSeance',{ID:id,Statut:st});}
+function setStat(id,st){
+  closeM();
+  var x=seance(id);
+  if(x){x.Statut=st;IDX=null;CY={};render();} // affichage immédiat, le serveur confirme ensuite
+  callQ_('saveSeance',[{ID:id,Statut:st}],true);
+}
 
 function showM(html){document.getElementById('box').innerHTML=html;document.getElementById('modal').classList.remove('hidden');}
 function closeM(){document.getElementById('modal').classList.add('hidden');}
@@ -1028,9 +1062,9 @@ function changeApiUrl(){
 function boot(){
   var cached=null;
   try{cached=JSON.parse(localStorage.getItem('cours_data_cache')||'null');}catch(e){}
-  if(cached&&cached.enfants){D=cached;render();}
+  if(cached&&cached.enfants){setD(cached);render();}
   else document.getElementById('app').innerHTML='<div class="empty">Chargement…</div>';
-  apiCall('getData',[]).then(function(d){D=d;cacheData();render();})
+  apiCall('getData',[]).then(function(d){setD(d);cacheData();render();})
     .catch(function(e){
       if(cached&&cached.enfants)return; // hors ligne : on garde la version en cache
 document.getElementById('app').innerHTML='<div class="card"><div class="empty">Erreur : '+esc(e.message||e)+'<div class="actions" style="justify-content:center"><button class="b" onclick="changeApiUrl()">Changer l\'URL de l\'API</button></div></div></div>';});

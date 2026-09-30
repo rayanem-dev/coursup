@@ -1,0 +1,111 @@
+/* =====================================================================
+ * OPTIMISATION VITESSE de Code.gs (à copier dans votre Apps Script)
+ *
+ * Problème : chaque action de l'appli appelle getData(), qui relit les mêmes
+ * feuilles des dizaines de fois (ensureCycles_ -> cycleStarts_ -> planPeriod_
+ * relisent "Versements" et "Sessions" pour CHAQUE cours) et rouvre le classeur
+ * à chaque lecture. Ici : le classeur, chaque onglet et chaque lecture sont mis
+ * en mémoire pendant UNE exécution (les variables globales sont remises à zéro
+ * à chaque appel), et invalidés dès qu'on écrit. Aucun changement de comportement.
+ *
+ * MODE D'EMPLOI — dans Code.gs :
+ *  1. Remplacez les fonctions  sh_, read_, append_, update_, delete_,
+ *     deleteRowSafe_ (inchangée, rien à faire), deleteWhere_  par celles ci-dessous.
+ *  2. Dans getData(), remplacez la 1re ligne par :
+ *       const existed = !!ss_().getSheetByName('Enfants');
+ *  3. Dans planPeriod_(), juste après la ligne
+ *       s.getRange(s.getLastRow() + 1, 1, rows.length, 5).setValues(rows);
+ *     ajoutez :
+ *       inval_('Sessions');
+ *  4. Déployez une nouvelle version du Web App.
+ * ===================================================================== */
+
+// ---- Cache par exécution ----
+let SS_ = null;
+const SHEET_CACHE_ = {};
+const READ_CACHE_ = {};
+function ss_() { return SS_ || (SS_ = SpreadsheetApp.openById(SS_ID)); }
+function inval_(name) { delete READ_CACHE_[name]; }
+
+function sh_(name) {
+  if (SHEET_CACHE_[name]) return SHEET_CACHE_[name];
+  const ss = ss_();
+  let s = ss.getSheetByName(name);
+  const want = SHEETS[name];
+  if (!s) {
+    s = ss.insertSheet(name);
+    s.getRange(1, 1, 1, want.length).setValues([want]).setFontWeight('bold');
+    s.setFrozenRows(1);
+    TEXT_COLS[name].forEach(c => s.getRange(1, c, s.getMaxRows(), 1).setNumberFormat('@'));
+  } else {
+    // Migration douce : ajoute les colonnes manquantes (ex. "Photo") à une feuille déjà existante.
+    const have = s.getLastColumn() ? s.getRange(1, 1, 1, s.getLastColumn()).getValues()[0] : [];
+    want.forEach((h, i) => {
+      if (have[i] !== h) {
+        s.getRange(1, i + 1).setValue(h).setFontWeight('bold');
+        if (TEXT_COLS[name].indexOf(i + 1) >= 0) s.getRange(1, i + 1, s.getMaxRows(), 1).setNumberFormat('@');
+      }
+    });
+    // Si le schéma a rétréci, supprime les colonnes devenues inutiles (en-têtes dupliqués).
+    if (s.getLastColumn() > want.length) {
+      s.deleteColumns(want.length + 1, s.getLastColumn() - want.length);
+    }
+  }
+  return (SHEET_CACHE_[name] = s);
+}
+
+function read_(name) {
+  if (READ_CACHE_[name]) return READ_CACHE_[name];
+  const v = sh_(name).getDataRange().getValues();
+  const h = v.shift();
+  const tz = Session.getScriptTimeZone();
+  return (READ_CACHE_[name] = v.filter(r => r[0] !== '').map(r => {
+    const o = {};
+    h.forEach((k, i) => {
+      let x = r[i];
+      if (x instanceof Date) x = Utilities.formatDate(x, tz, 'yyyy-MM-dd');
+      o[k] = x;
+    });
+    return o;
+  }));
+}
+
+function append_(name, o) {
+  sh_(name).appendRow(SHEETS[name].map(k => o[k] === undefined ? '' : o[k]));
+  inval_(name);
+}
+
+function update_(name, id, o) {
+  const s = sh_(name);
+  const v = s.getDataRange().getValues();
+  const h = v[0];
+  for (let i = 1; i < v.length; i++) {
+    if (String(v[i][0]) === String(id)) {
+      h.forEach((k, j) => {
+        if (k !== 'ID' && o[k] !== undefined) s.getRange(i + 1, j + 1).setValue(o[k]);
+      });
+      inval_(name);
+      return;
+    }
+  }
+}
+
+function delete_(name, id) {
+  const s = sh_(name);
+  const v = s.getDataRange().getValues();
+  for (let i = 1; i < v.length; i++) {
+    if (String(v[i][0]) === String(id)) { deleteRowSafe_(s, i + 1, v[0].length); inval_(name); return; }
+  }
+}
+
+/** Supprime toutes les lignes d'un onglet dont la colonne `col` vaut `val`. */
+function deleteWhere_(name, col, val) {
+  const s = sh_(name);
+  const v = s.getDataRange().getValues();
+  const j = v[0].indexOf(col);
+  if (j < 0) return;
+  for (let i = v.length - 1; i >= 1; i--) {
+    if (String(v[i][j]) === String(val)) deleteRowSafe_(s, i + 1, v[0].length);
+  }
+  inval_(name);
+}

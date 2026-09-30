@@ -98,14 +98,17 @@
   .crumbs a:hover{text-decoration:underline}
   table.emploi{border-collapse:separate;border-spacing:0;width:100%;table-layout:fixed;font-size:11px}
   table.emploi th,table.emploi td{border:1px solid var(--bd);padding:3px 4px;vertical-align:top;text-align:left;overflow-wrap:break-word;word-break:break-word}
-  table.emploi th{background:var(--bg);position:sticky;top:0;white-space:normal;z-index:2}
+  table.emploi th{background:var(--bg);position:sticky;top:0;white-space:normal;z-index:2;text-align:center}
+  .emploi-wrap{overflow-x:auto;-webkit-overflow-scrolling:touch}
   table.emploi th:first-child,table.emploi td.heure{
     position:sticky;left:0;white-space:normal;font-weight:700;background:var(--bg);
-    width:46px;box-shadow:2px 0 4px -2px rgba(0,0,0,.15)
+    width:52px;text-align:center;font-size:10px;box-shadow:2px 0 4px -2px rgba(0,0,0,.15)
   }
   table.emploi th:first-child{z-index:3}
   table.emploi td.heure{z-index:1}
   table.emploi .cell{border-radius:6px;padding:2px 4px;margin-bottom:3px;font-size:10px;line-height:1.25}
+  table.emploi .cell:last-child{margin-bottom:0}
+  table.emploi td{height:34px}
   table.emploi .cell.ecole{background:#eef1fb;cursor:pointer}
   table.emploi .cell.cours{background:#fff3e0}
   .print-header,.print-footer{display:none}
@@ -230,11 +233,12 @@ function call(fn){
   var args=[].slice.call(arguments,1);
   document.getElementById('app').style.opacity=.5;
   apiCall(fn,args).then(function(data){
-    D=data;document.getElementById('app').style.opacity=1;render();
+    D=data;cacheData();document.getElementById('app').style.opacity=1;render();
   }).catch(function(e){
     document.getElementById('app').style.opacity=1;alert(e.message||e);
   });
 }
+function cacheData(){try{localStorage.setItem('cours_data_cache',JSON.stringify(D));}catch(e){}}
 // Envoi en POST (Content-Type text/plain pour éviter le préflight CORS que les Web Apps
 // Apps Script ne gèrent pas). Utilisé uniquement pour l'upload de photo : le payload
 // base64 est trop volumineux pour tenir dans une URL (limite ~getData en GET).
@@ -418,14 +422,16 @@ function buildGrille_(){
   var labels=Object.keys(slots).sort(function(a,b){return slots[a].start-slots[b].start;});
   return labels.map(function(l){return {label:l,byDay:slots[l].byDay};});
 }
-var WEEK_GRID=['Dim','Lun','Mar','Mer','Jeu','Ven','Sam'];
+var WEEK_GRID=['Lun','Mar','Mer','Jeu','Ven','Sam','Dim'];
 function vGrilleEmploi(){
-  var cols=buildGrille_();
-  var head='<tr><th>Jour</th>'+cols.map(function(c){return '<th>'+esc(c.label)+'</th>';}).join('')+'</tr>';
-  var body=!cols.length?'<tr><td><div class="empty">Aucun créneau pour l\'instant.</div></td></tr>'
-    :WEEK_GRID.map(function(d){
-      return '<tr><td class="heure">'+d+'</td>'+cols.map(function(c){
-        return '<td>'+((c.byDay[d]||[]).join(''))+'</td>';
+  var rows=buildGrille_();
+  // Sam/Dim n'apparaissent que s'ils contiennent au moins un créneau
+  var days=WEEK_GRID.filter(function(d,i){return i<5||rows.some(function(r){return (r.byDay[d]||[]).length;});});
+  var head='<tr><th>Heure</th>'+days.map(function(d){return '<th>'+d+'</th>';}).join('')+'</tr>';
+  var body=!rows.length?'<tr><td colspan="'+(days.length+1)+'"><div class="empty">Aucun créneau pour l\'instant.</div></td></tr>'
+    :rows.map(function(r){
+      return '<tr><td class="heure">'+esc(r.label).replace('–','<br>')+'</td>'+days.map(function(d){
+        return '<td>'+((r.byDay[d]||[]).join(''))+'</td>';
       }).join('')+'</tr>';
     }).join('');
   return '<div class="card grid-print"><div class="print-header">'
@@ -437,7 +443,7 @@ function vGrilleEmploi(){
     +'<button class="b" onclick="window.print()">🖨️ Imprimer</button>'
     +'<button class="b p" onclick="openEcole()">+ Créneau</button></div>'
     +'<div class="sub" style="margin-bottom:8px">Lycée (gratuit, modifiable ici) + cours particuliers. Clique un créneau du lycée pour le modifier.</div>'
-    +'<table class="emploi">'+head+body+'</table>'
+    +'<div class="emploi-wrap"><table class="emploi">'+head+body+'</table></div>'
     +'<div class="print-footer"><span class="lg"><span class="sw ecole"></span>Lycée</span><span class="lg"><span class="sw cours"></span>Cours particuliers</span></div>'
     +'</div>';
 }
@@ -1020,9 +1026,14 @@ function changeApiUrl(){
   boot();
 }
 function boot(){
-  document.getElementById('app').innerHTML='<div class="empty">Chargement…</div>';
-  apiCall('getData',[]).then(function(d){D=d;render();})
-    .catch(function(e){document.getElementById('app').innerHTML='<div class="card"><div class="empty">Erreur : '+esc(e.message||e)+'<div class="actions" style="justify-content:center"><button class="b" onclick="changeApiUrl()">Changer l\'URL de l\'API</button></div></div></div>';});
+  var cached=null;
+  try{cached=JSON.parse(localStorage.getItem('cours_data_cache')||'null');}catch(e){}
+  if(cached&&cached.enfants){D=cached;render();}
+  else document.getElementById('app').innerHTML='<div class="empty">Chargement…</div>';
+  apiCall('getData',[]).then(function(d){D=d;cacheData();render();})
+    .catch(function(e){
+      if(cached&&cached.enfants)return; // hors ligne : on garde la version en cache
+document.getElementById('app').innerHTML='<div class="card"><div class="empty">Erreur : '+esc(e.message||e)+'<div class="actions" style="justify-content:center"><button class="b" onclick="changeApiUrl()">Changer l\'URL de l\'API</button></div></div></div>';});
 }
 boot();
 

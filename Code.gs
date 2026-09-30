@@ -35,15 +35,13 @@ const TEXT_COLS = {
   CalSync: [1, 2]
 };
 
-// ===================== ICÔNES PWA — GARDEZ VOS 4 LIGNES EXISTANTES =====================
-// Icônes PWA en data URI PNG (192x192, 512x512, + variante maskable pour Android).
-// ⚠️ Ces 4 lignes sont des valeurs vides ici : dans votre projet Apps Script, GARDEZ vos
-// 4 lignes "const ICON_... = 'data:image/png;base64,...';" actuelles à la place de celles-ci
-// (elles sont trop longues pour être recopiées). Vides, l'appli fonctionne mais sans icône.
-const ICON_192 = '';
-const ICON_512 = '';
-const ICON_192_MASK = '';
-const ICON_512_MASK = '';
+// ===================== ICÔNES PWA =====================
+// Liens directs vers les icônes hébergées sur GitHub Pages (plus besoin de data URI).
+const ICON_BASE = 'https://rayanem-dev.github.io/coursup/';
+const ICON_192 = ICON_BASE + 'icon-192.png';
+const ICON_512 = ICON_BASE + 'icon-512.png';
+const ICON_192_MASK = ICON_BASE + 'icon-192-maskable.png';
+const ICON_512_MASK = ICON_BASE + 'icon-512-maskable.png';
 // =======================================================================================
 
 function doGet(e) {

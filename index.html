@@ -21,7 +21,7 @@
   nav{display:flex;background:#fff;border-bottom:1px solid var(--bd);position:sticky;top:0;z-index:5}
   nav button{flex:1;padding:12px 4px;border:0;background:none;font-size:14px;color:var(--mut);border-bottom:3px solid transparent;cursor:pointer}
   nav button.on{color:var(--pri);border-color:var(--pri);font-weight:600}
-  main{max-width:760px;margin:0 auto;padding:14px;padding-bottom:calc(14px + env(safe-area-inset-bottom,0px))}
+  main{max-width:1240px;margin:0 auto;padding:14px clamp(12px,2.5vw,32px);padding-bottom:calc(14px + env(safe-area-inset-bottom,0px))}
   .card{background:var(--card);border:1px solid var(--bd);border-radius:12px;padding:14px;margin-bottom:14px}
   .card h2{margin:0;font-size:19px}
   .sub{color:var(--mut);font-size:13px}
@@ -175,7 +175,8 @@
   /* ---------- Accueil : jauges ---------- */
   .hello{display:flex;align-items:center;justify-content:space-between;gap:8px;margin:2px 2px 12px}
   .hello b{font-size:20px}.hello span{color:var(--mut);font-size:13px;text-transform:capitalize}
-  .tiles{display:grid;grid-template-columns:1fr 1fr;gap:10px;margin-bottom:14px}
+  .tiles{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:12px;margin-bottom:14px}
+  @media(min-width:760px){.tiles{grid-template-columns:repeat(4,minmax(0,1fr))}}
   .tile{background:var(--card);border-radius:16px;padding:12px;box-shadow:0 1px 3px rgba(20,30,60,.06),0 6px 18px rgba(20,30,60,.05);display:flex;flex-direction:column;align-items:center;text-align:center;gap:4px}
   .tile.wide{grid-column:1/-1;align-items:stretch;text-align:left}
   .tile .lbl{font-size:12px;color:var(--mut)}
@@ -198,10 +199,45 @@
   .bar>i{display:block;height:100%;border-radius:99px;transform-origin:left;background:linear-gradient(90deg,#5c7cfa,#3b5bdb)}
   .bar.ok>i{background:linear-gradient(90deg,#51cf66,#2f9e44)}
   .bar.warn>i{background:linear-gradient(90deg,#ffa94d,#e8590c)}
-  .pay{padding:9px 0;border-top:1px solid var(--bd)}
-  .pay:first-of-type{border-top:0}
   .bl{display:flex;justify-content:space-between;font-size:12px;color:var(--mut)}
   .bl b{color:var(--txt)}
+
+  /* ---------- Mise en page adaptative ---------- */
+  .split{display:grid;gap:14px;grid-template-columns:minmax(0,1fr);align-items:start}
+  @media(min-width:1000px){.split{grid-template-columns:minmax(0,1fr) 380px}.split aside{position:sticky;top:64px}}
+  .cgrid{display:grid;grid-template-columns:repeat(auto-fill,minmax(310px,1fr));gap:14px}
+  .cgrid>.card,.grid>.card{margin-bottom:0}
+  .grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(340px,1fr));gap:14px;align-items:start}
+  .cols{display:grid;grid-template-columns:repeat(auto-fill,minmax(360px,1fr));column-gap:28px}
+  .cols .row{border-top:0;border-bottom:1px solid var(--bd)}
+  .filters select,.filters input{max-width:340px}
+  @media(min-width:900px){.cal .day{min-height:96px}.chip{font-size:11px}}
+  .who{display:flex;align-items:center;gap:10px;margin:18px 2px 10px}
+  .who:first-child{margin-top:4px}
+  .who h2{margin:0;font-size:19px}
+  .who .grow{min-width:0}
+  /* ---------- Fiche cours (accueil) ---------- */
+  .cc{padding:14px;border-left:5px solid var(--cc,#3b5bdb);display:flex;flex-direction:column;gap:8px}
+  .cc.pending{border-left-color:var(--warn)}
+  .cc.paid{border-left-color:var(--ok)}
+  .chead{display:flex;justify-content:space-between;align-items:flex-start;gap:8px}
+  .ctitle{font-size:16px}
+  .tl{display:grid;grid-template-columns:auto 1fr;gap:3px 10px;font-size:12.5px;margin:2px 0}
+  .tl span{color:var(--mut)}.tl b{text-align:right;font-weight:600}
+  .seg{display:flex;height:11px;background:#eceef5;border-radius:99px;overflow:hidden}
+  .seg i{display:block;height:100%;transform-origin:left}
+  .seg .d{background:linear-gradient(90deg,#51cf66,#2f9e44)}
+  .seg .p{background:repeating-linear-gradient(45deg,#91a7ff,#91a7ff 5px,#748ffc 5px,#748ffc 10px)}
+  .wait,.okb{display:flex;align-items:center;gap:10px;border-radius:12px;padding:9px 11px}
+  .wait{background:#fff4e6;border:1.5px solid #ffa94d;animation:pulse 1.8s ease-out infinite}
+  .wait b{color:#d9480f}.wait .grow{min-width:0;font-size:13px}
+  .wait .sub{color:#a5561a}
+  .okb{background:#ebfbee;color:#2b8a3e;font-weight:600;font-size:13px}
+  .pdot{width:12px;height:12px;border-radius:50%;background:var(--warn);flex:none;animation:blink 1.2s ease-in-out infinite}
+  @keyframes pulse{0%{box-shadow:0 0 0 0 rgba(232,89,12,.4)}70%{box-shadow:0 0 0 10px rgba(232,89,12,0)}100%{box-shadow:0 0 0 0 rgba(232,89,12,0)}}
+  @keyframes blink{50%{opacity:.35;transform:scale(.8)}}
+  #app.enter .seg i{animation:barin .9s cubic-bezier(.3,.7,.2,1) both}
+  #app.enter .seg .p{animation-delay:.25s}
 </style>
 </head>
 <body>
@@ -459,7 +495,7 @@ function render(){
   if(tab==='seances')h=vSeances();
   if(tab==='paie')h=vPaie();
   if(tab==='sujet')h=vSujet();
-  if(tab==='set')h=vSet();
+  if(tab==='set')h='<div class="grid">'+vSet()+'</div>';
   var app=document.getElementById('app');
   app.className=(tab!==lastTab)?'enter':'';
   lastTab=tab;
@@ -469,7 +505,7 @@ var lastTab=null;
 
 function vHome(){
   if(!D.cours.length)return '<div class="card"><div class="empty">Aucun cours pour l\'instant.<br>Va dans <b>Réglages</b> pour ajouter les cours (matière, prof, prix du mois).</div></div>';
-  return vDash()+vNextPay()+vTodo()+vChildren();
+  return vDash()+'<div class="split"><div>'+vCourses()+'</div><aside>'+vTodo()+'</aside></div>';
 }
 
 function vCalTab(){
@@ -768,25 +804,53 @@ function vDash(){
 }
 
 function daysTo(d){return Math.round((new Date(d+'T00:00')-new Date(today()+'T00:00'))/86400000);}
-function vNextPay(){
-  var t=today(), list=[];
-  D.cours.forEach(function(c){
-    var cy=curCycle(cycles(c));if(!cy)return;
-    var s=cyStat(c,cy), due=nextDue(c,cy);
-    list.push({c:c,s:s,due:due,late:s.reste>0,pct:s.prix?Math.min(s.paye/s.prix,1):1});
-  });
-  if(!list.length)return '';
-  list.sort(function(a,b){return (b.late-a.late)||(a.due<b.due?-1:a.due>b.due?1:0);});
-  return '<div class="card"><div class="head"><h2>💳 Prochains paiements</h2></div>'
-    +list.map(function(x){
-      var n=daysTo(x.due), cls=x.late?(x.pct>0?'warn':'warn'):'ok';
-      var when=x.late?(x.pct>0?'paiement partiel — reste à payer':n<0?'impayé depuis '+(-n)+' j':'à payer maintenant'):(n<=0?'aujourd\'hui':'dans '+n+' j · '+fs(x.due));
-      return '<div class="pay"><div class="bl" style="align-items:baseline"><span style="color:var(--txt);font-size:14px">'
-        +'<span class="dot" style="background:'+ccol(x.c.EnfantID)+'"></span><b>'+subjIcon(x.c.Matiere)+' '+esc(x.c.Matiere)+'</b>'+(x.c.Prof?' · '+esc(x.c.Prof):'')+' <span class="sub">— '+esc(enf(x.c.EnfantID).Nom)+'</span></span>'
-        +'<b class="'+(x.late?'due':'ok')+'">'+(x.late?fmt(x.s.reste):'✓ à jour')+'</b></div>'
-        +'<div class="bar '+cls+'"><i style="width:'+(x.pct*100).toFixed(0)+'%"></i></div>'
-        +'<div class="bl"><span>'+esc(when)+'</span><span>'+fmt(x.s.paye)+' / '+fmt(x.s.prix)+'</span></div></div>';
-    }).join('')+'</div>';
+function dansTxt(d){var n=daysTo(d);return n<0?'il y a '+(-n)+' j':n===0?'aujourd\'hui':n===1?'demain':'dans '+n+' j';}
+function courseCard(c){
+  var n=Number(c.SeancesMois)||8, cur=curCycle(cycles(c)), col=ccol(c.EnfantID);
+  var top='<div class="chead"><div style="min-width:0"><b class="ctitle">'+subjIconBig(c.Matiere)+' <span dir="auto">'+esc(c.Matiere)+'</span></b>'
+    +'<div class="sub">'+(c.Prof?esc(c.Prof)+' · ':'')+(c.Jours?esc(c.Jours):'jours non définis')+choraire(c)+' · '+fmt(c.PrixMois)+'/mois</div></div>';
+  var acts='<div class="actions"><button class="b p" onclick="openPaie(null,\''+c.ID+'\')">+ Paiement</button>'
+    +'<button class="b" onclick="openSeance(null,\''+c.ID+'\')">+ Séance</button></div>';
+  if(!cur)return '<div class="card cc" style="--cc:'+col+'">'+top+'</div>'
+    +'<div class="sub" style="margin:8px 0">Aucune séance ni paiement pour l\'instant.</div>'+acts+'</div>';
+  var s=cyStat(c,cur), pending=s.prix>0?s.reste>0:false, od=-daysTo(cur.start);
+  var pays=D.paiements.filter(function(p){return same(p.CoursID,c.ID);})
+    .sort(function(a,b){return String(b.Date).slice(0,10)>String(a.Date).slice(0,10)?1:-1;});
+  var last=pays[0];
+  var fait=Math.min(s.faites,n), afaire=Math.max(Math.min(s.prevues,n-fait),0);
+  var pP=s.prix?Math.min(s.paye/s.prix,1):1;
+  var banner=pending
+    ?'<div class="wait"><span class="pdot"></span><div class="grow"><b>Paiement en attente</b><div class="sub">'
+      +(s.paye>0?'reste '+fmt(s.reste)+' sur '+fmt(s.prix):fmt(s.prix)+' à régler')+(od>0?' · dû depuis '+od+' j':'')+'</div></div>'
+      +'<button class="b p" onclick="openPaie(null,\''+c.ID+'\')">Payer</button></div>'
+    :'<div class="okb">✓ Cycle payé — '+fmt(s.paye)+'</div>';
+  return '<div class="card cc '+(pending?'pending':'paid')+'" style="--cc:'+col+'">'
+    +top+'<span class="badge '+payBadge(s)+'">'+payBadge(s)+'</span></div>'
+    +banner
+    +'<div><div class="bl"><span>Séances</span><b>'+fait+' faites · '+afaire+' à faire <span style="font-weight:400">/ '+n+'</span></b></div>'
+    +'<div class="seg" style="margin-top:5px"><i class="d" style="width:'+(fait/n*100).toFixed(1)+'%"></i><i class="p" style="width:'+(afaire/n*100).toFixed(1)+'%"></i></div></div>'
+    +'<div><div class="bl"><span>Paiement</span><b>'+fmt(s.paye)+' / '+fmt(s.prix)+'</b></div>'
+    +'<div class="bar '+(pending?'warn':'ok')+'"><i style="width:'+(pP*100).toFixed(0)+'%"></i></div></div>'
+    +'<div class="tl"><span>Cycle en cours</span><b>'+esc(plabel(cur))+'</b>'
+    +'<span>Dernier paiement</span><b>'+(last?esc(fd(last.Date))+' · '+fmt(last.Montant):'aucun')+'</b>'
+    +'<span>Prochain cycle</span><b>'+esc(fd(cur.end))+' <span style="color:'+(pending?'var(--warn)':'var(--mut)')+';font-weight:500">('+dansTxt(cur.end)+')</span></b>'
+    +'<span>Paiement prévu</span><b'+(pending?' style="color:var(--warn)"':'')+'>'+(pending?'maintenant, puis ':'')+'le '+esc(fs(cur.end))+'</b></div>'
+    +acts+'</div>';
+}
+function vCourses(){
+  return D.enfants.map(function(e){
+    var cs=D.cours.filter(function(c){return same(c.EnfantID,e.ID);});
+    if(!cs.length)return '';
+    var reste=cs.reduce(function(a,c){return a+cStat(c).reste;},0);
+    cs.sort(function(a,b){
+      var pa=cStat(a).reste>0?0:1, pb=cStat(b).reste>0?0:1;
+      return pa-pb||(String(a.Matiere)<String(b.Matiere)?-1:1);
+    });
+    return '<div class="who"><span class="avatar" style="background:'+ccol(e.ID)+'">'+avatarImg(e)+'</span>'
+      +'<div class="grow"><h2>'+esc(e.Nom)+'</h2><div class="sub">'+cs.length+' cours</div></div>'
+      +'<span class="'+(reste>0?'due':'ok')+'" style="text-align:right"><b>'+fmt(Math.abs(reste))+'</b><br><span class="sub">'+(reste>0?'à payer':reste<0?'d\'avance':'à jour')+'</span></span></div>'
+      +'<div class="cgrid">'+cs.map(courseCard).join('')+'</div>';
+  }).join('');
 }
 
 function vTodo(){
@@ -844,43 +908,6 @@ function vCal(){
   return h;
 }
 
-function vChildren(){
-  var t=today();
-  return D.enfants.map(function(e){
-    var cs=D.cours.filter(function(c){return same(c.EnfantID,e.ID);});
-    if(!cs.length)return '';
-    var reste=cs.reduce(function(a,c){return a+cStat(c).reste;},0), next=null;
-    cs.forEach(function(c){var d=nextDue(c,curCycle(cycles(c)));if(d&&(!next||d<next))next=d;});
-    var dueTxt=next?(next<=t?'maintenant':fs(next)):'—';
-    return '<div class="card"><div class="head"><div style="display:flex;align-items:center;gap:10px;min-width:0">'
-      +'<span class="avatar" style="background:'+ccol(e.ID)+'">'+avatarImg(e)+'</span>'
-      +'<div style="min-width:0"><h2>'+esc(e.Nom)+'</h2><div class="sub">prochaine échéance : '+esc(dueTxt)+'</div></div></div>'
-      +'<span class="'+(reste>0?'due':'ok')+'" style="text-align:right"><b>'+fmt(Math.abs(reste))+'</b><br><span class="sub">'+(reste>0?'à payer':reste<0?'d\'avance':'à jour')+'</span></span></div>'
-      +cs.map(function(c){
-        var cys=cycles(c), cur=curCycle(cys), n=Number(c.SeancesMois)||8;
-        var head='<div class="course"><div class="head"><h3>'+subjIcon(c.Matiere)+' '+esc(c.Matiere)+(c.Prof?' · '+esc(c.Prof):'')+'</h3>';
-        var body;
-        if(cur){
-          var s=cyStat(c,cur), due=nextDue(c,cur), pS=Math.min(s.faites/n,1), pP=s.prix?Math.min(s.paye/s.prix,1):1;
-          head+='<span class="badge '+payBadge(s)+'">'+payBadge(s)+'</span></div>';
-          body='<div class="sub">'+fmt(c.PrixMois)+' / mois · '+n+' séances'+(c.Jours?' · '+esc(c.Jours):'')+choraire(c)+'</div>'
-            +'<div class="bl" style="margin-top:8px"><span>Séances faites</span><b>'+s.faites+' / '+n+'</b></div>'
-            +'<div class="bar"><i style="width:'+(pS*100).toFixed(0)+'%"></i></div>'
-            +'<div class="bl"><span>Payé</span><b>'+fmt(s.paye)+' / '+fmt(s.prix)+'</b></div>'
-            +'<div class="bar '+(pP>=1?'ok':'warn')+'"><i style="width:'+(pP*100).toFixed(0)+'%"></i></div>'
-            +'<div class="sub">Reste <b class="'+(s.reste>0?'due':'ok')+'">'+fmt(Math.max(s.reste,0))+'</b> · prochain paiement : <b>'+(due<=t?'maintenant':esc(fs(due)))+'</b></div>';
-        }else{
-          head+='</div>';
-          body='<div class="sub">'+fmt(c.PrixMois)+' / mois · '+n+' séances'+(c.Jours?' · '+esc(c.Jours):'')+choraire(c)+'</div>'
-            +'<div class="sub" style="margin:8px 0">Aucune séance ni paiement pour l\'instant.</div>';
-        }
-        return head+body
-          +'<div class="actions"><button class="b p" onclick="openPaie(null,\''+c.ID+'\')">+ Paiement</button>'
-          +'<button class="b" onclick="openSeance(null,\''+c.ID+'\')">+ Séance</button></div></div>';
-      }).join('')+'</div>';
-  }).join('');
-}
-
 function coursSelect(id,val,extra){
   return '<select id="'+id+'" '+(extra||'')+'>'+D.cours.map(function(c){
     return '<option value="'+c.ID+'"'+(same(c.ID,val)?' selected':'')+'>'+esc(cname(c))+'</option>';}).join('')+'</select>';
@@ -898,23 +925,23 @@ function vSeances(){
   return '<div class="filters">'+coursFilter()+'<input type="month" value="'+fMonth+'" onchange="fMonth=this.value;render()"></div>'
     +'<div class="card"><div class="sub">'+faites+' séance(s) faite(s) sur '+list.length+' sur cette période</div>'
     +'<div class="actions"><button class="b p" onclick="openSeance(null,\''+fCours+'\')">+ Nouvelle séance</button></div></div>'
-    +'<div class="card">'+(list.length?list.map(function(s){
+    +'<div class="card"><div class="cols">'+(list.length?list.map(function(s){
       var can=s.Statut==='Prévue'||s.Statut==='Faite';
       return '<div class="row">'
         +(can?'<input type="checkbox" style="width:22px;height:22px" title="Séance faite" '+(s.Statut==='Faite'?'checked':'')+' onchange="setStat(\''+s.ID+'\',this.checked?\'Faite\':\'Prévue\')">':'<span style="width:22px"></span>')
         +'<div class="grow"><span style="font-size:16px;font-weight:700">'+subjIconBig(crs(s.CoursID).Matiere)+' '+esc(cname(crs(s.CoursID)))+'</span><div class="sub">'+esc(fd(s.Date))+choraire(crs(s.CoursID))+(s.Note?' · '+esc(s.Note):'')+'</div></div>'
         +'<span class="badge '+s.Statut+'">'+s.Statut+'</span>'
         +(s.Statut==='Prévue'?'<button class="b i" title="Décaler / reporter" onclick="openReport(\''+s.ID+'\')">↪</button>':'')
-        +'<button class="b i" onclick="openSeance(\''+s.ID+'\')">✎</button></div>';}).join(''):'<div class="empty">Aucune séance</div>')+'</div>';
+        +'<button class="b i" onclick="openSeance(\''+s.ID+'\')">✎</button></div>';}).join(''):'<div class="empty">Aucune séance</div>')+'</div></div>';
 }
 
 function vPaie(){
   var list=D.paiements.filter(function(x){return !fCours||same(x.CoursID,fCours);}).sort(function(a,b){return a.Date<b.Date?1:-1;});
   return '<div class="filters">'+coursFilter()+'<button class="b p" onclick="openPaie(null,\''+fCours+'\')">+ Paiement</button></div>'
-    +'<div class="card">'+(list.length?list.map(function(x){
+    +'<div class="card"><div class="cols">'+(list.length?list.map(function(x){
       return '<div class="row"><div class="grow"><b>'+fmt(x.Montant)+'</b> <span class="sub">période dès le '+esc(fs(pstart(x)))+'</span>'
         +'<div class="sub">Payé le '+esc(fd(x.Date))+' · '+esc(cname(crs(x.CoursID)))+(x.Mode?' · '+esc(x.Mode):'')+(x.Note?' · '+esc(x.Note):'')+'</div></div>'
-        +'<button class="b i" onclick="openPaie(\''+x.ID+'\')">✎</button></div>';}).join(''):'<div class="empty">Aucun paiement</div>')+'</div>';
+        +'<button class="b i" onclick="openPaie(\''+x.ID+'\')">✎</button></div>';}).join(''):'<div class="empty">Aucun paiement</div>')+'</div></div>';
 }
 
 function vSet(){

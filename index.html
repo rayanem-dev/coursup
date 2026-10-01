@@ -917,10 +917,20 @@ function coursFilter(){
     +D.cours.map(function(c){return '<option value="'+c.ID+'"'+(same(fCours,c.ID)?' selected':'')+'>'+esc(cname(c))+'</option>';}).join('')+'</select>';
 }
 
+// Ordre d'affichage des séances : les plus proches d'aujourd'hui d'abord
+// (à venir par ordre chronologique, puis les passées de la plus récente à la plus ancienne).
+function cmpProche(a,b){
+  var t=today(), da=String(a.Date).slice(0,10), db=String(b.Date).slice(0,10);
+  var fa=da>=t, fb=db>=t;
+  if(fa!==fb)return fa?-1:1;
+  if(da!==db)return fa?(da<db?-1:1):(da<db?1:-1);
+  var ha=String(crs(a.CoursID).Heure||'99:99').split('-')[0].trim(), hb=String(crs(b.CoursID).Heure||'99:99').split('-')[0].trim();
+  return ha<hb?-1:ha>hb?1:0;
+}
 function vSeances(){
   var list=D.seances.filter(function(s){
     return (!fCours||same(s.CoursID,fCours))&&(!fMonth||String(s.Date).slice(0,7)===fMonth);
-  }).sort(function(a,b){return a.Date<b.Date?1:-1;});
+  }).sort(cmpProche);
   var faites=list.filter(function(s){return s.Statut==='Faite';}).length;
   return '<div class="filters">'+coursFilter()+'<input type="month" value="'+fMonth+'" onchange="fMonth=this.value;render()"></div>'
     +'<div class="card"><div class="sub">'+faites+' séance(s) faite(s) sur '+list.length+' sur cette période</div>'

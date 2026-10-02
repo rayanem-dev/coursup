@@ -113,7 +113,7 @@ const API_FNS = {
   savePaiement, deletePaiement, reporterSeance, deleteCours,
   deleteEnfant, listDrive, getEcole, saveEcole, deleteEcole,
   importEcoleDepuisLycee, saveConfig, syncCalendrierManuel, resyncCalendrier,
-  supprimerToutesAlertes, testAlerte, saveEnfantPhoto
+  supprimerToutesAlertes, testAlerte, saveEnfantPhoto, supprimerDoublons
 };
 
 /** Réglages simples (emails parents + préférences de rappel), stockés hors feuille de calcul. */
@@ -483,6 +483,23 @@ function ensureCycles_() {
   });
 }
 
+/**
+ * Planifie les cycles sous verrou : sans ça, deux appareils qui ouvrent l'appli en même
+ * temps (ex. papa et maman) pouvaient chacun créer les mêmes séances "Prévue" -> séances
+ * en double -> événements et notifications en double. Si le verrou est déjà pris, on
+ * saute simplement la planification (l'autre appel s'en charge) et on se contente de lire.
+ */
+function ensureCyclesVerrou_() {
+  const lock = LockService.getScriptLock();
+  if (!lock.tryLock(20000)) return;
+  try {
+    ['Cours', 'Sessions', 'Versements'].forEach(inval_); // relire à jour une fois le verrou obtenu
+    ensureCycles_();
+  } finally {
+    lock.releaseLock();
+  }
+}
+
 function getData() {
   const existed = !!ss_().getSheetByName('Enfants');
   let enfants = read_('Enfants');
@@ -491,7 +508,7 @@ function getData() {
     append_('Enfants', { ID: id_(), Nom: 'Leila' });
     enfants = read_('Enfants');
   }
-  ensureCycles_();
+  ensureCyclesVerrou_();
   return {
     enfants: enfants,
     cours: read_('Cours'),
@@ -697,19 +714,52 @@ function calSyncSet_(calSync, key, eventId) {
   calSync[key] = eventId;
 }
 
-/** Ajoute les rappels demandés à un événement, selon les préférences. allow1h=false pour le lycée (gratuit). */
+/** Exécute `fn` sous verrou : empêche deux synchronisations simultanées (déclencheur
+ *  quotidien + bouton, ou deux appareils) de créer chacune le même événement. */
+function avecVerrou_(fn) {
+  const lock = LockService.getScriptLock();
+  if (!lock.tryLock(25000)) throw new Error('Une autre synchronisation est déjà en cours : réessaie dans un instant.');
+  try { return fn(); } finally { lock.releaseLock(); }
+}
+
+/** Clé d'identification d'un événement (titre + heure de début) pour détecter ceux qui existent déjà. */
+function cleEvt_(titre, start) { return titre + '|' + start.getTime(); }
+
+/** Charge UNE fois les événements déjà présents sur l'agenda Famille pour la période à synchroniser :
+ *  si le suivi "CalSync" a été perdu, on réutilise l'événement existant au lieu d'en créer un second. */
+function chargerEvenementsExistants_(cal, horizonJours) {
+  const map = {};
+  const debut = new Date(Date.now() - 86400000);
+  const fin = new Date(Date.now() + (horizonJours + 2) * 86400000);
+  cal.getEvents(debut, fin).forEach(ev => {
+    const k = cleEvt_(ev.getTitle(), ev.getStartTime());
+    if (!map[k]) map[k] = ev.getId();
+  });
+  return map;
+}
+
+function normMat_(s) {
+  return String(s || '').toLowerCase().normalize('NFD').replace(/[\u0300-\u036f]/g, '').replace(/\s+/g, ' ').trim();
+}
+
+/** Ajoute les rappels demandés à un événement, selon les préférences. allow1h=false pour le lycée (gratuit).
+ *  Les minutes identiques ne sont ajoutées qu'une fois (ex. cours à 8h : "le matin" = "1h avant"). */
 function addReminders_(event, cfg, allow1h) {
-  if (cfg.veille) event.addPopupReminder(24 * 60); // 1 jour avant
+  const minutes = [];
+  if (cfg.veille) minutes.push(24 * 60); // 1 jour avant
   if (cfg.matin) {
     const start = event.getStartTime();
     const minutesDuJour = start.getHours() * 60 + start.getMinutes();
     const avant = minutesDuJour - 7 * 60; // vise ~7h00 le jour même
-    if (avant > 0) event.addPopupReminder(avant);
+    if (avant > 0) minutes.push(avant);
   }
-  if (allow1h && cfg.uneHeure) event.addPopupReminder(60);
+  if (allow1h && cfg.uneHeure) minutes.push(60);
+  minutes.filter((m, i) => minutes.indexOf(m) === i).forEach(m => event.addPopupReminder(m));
 }
 
-/** Projette les créneaux du lycée (récurrents par jour de semaine) sur les prochains jours et crée les événements manquants. */
+/** Projette les créneaux du lycée (récurrents par jour de semaine) sur les prochains jours et crée les événements manquants.
+ *  Un même créneau (jour + horaire + matière) partagé par plusieurs enfants = UN SEUL événement
+ *  (avant : un événement par enfant, donc des notifications en double). */
 function syncEcoleVersAgenda_(cfg, horizonJours, deadline) {
   // Par défaut, le lycée n'est PAS ajouté à l'agenda du tout : c'est un choix explicite
   // (case "Ajouter le lycée à l'agenda" dans les réglages). Tant qu'elle n'est pas cochée,
@@ -718,9 +768,16 @@ function syncEcoleVersAgenda_(cfg, horizonJours, deadline) {
   const ecole = read_('Ecole');
   if (!ecole.length) return { n: 0, more: false, echecs: [] };
   const enfants = read_('Enfants');
+  const groupes = {};
+  ecole.forEach(x => {
+    const k = x.Jour + '|' + x.Horaire + '|' + normMat_(x.Matiere);
+    (groupes[k] = groupes[k] || { jour: x.Jour, horaire: x.Horaire, matiere: x.Matiere, membres: [] }).membres.push(x);
+  });
+  const liste = Object.keys(groupes).map(k => groupes[k]);
   const cal = familleCal_();
   const today = new Date();
   const calSync = chargerCalSync_();
+  const existants = chargerEvenementsExistants_(cal, horizonJours);
   let n = 0, more = false;
   for (let i = 0; i <= horizonJours; i++) {
     if (more) break;
@@ -728,21 +785,28 @@ function syncEcoleVersAgenda_(cfg, horizonJours, deadline) {
     d.setDate(d.getDate() + i);
     const dateStr = fmt_(d);
     const abbr = DAYS[d.getDay()];
-    for (const x of ecole.filter(x => x.Jour === abbr)) {
+    for (const g of liste.filter(g => g.jour === abbr)) {
       if (Date.now() > deadline) { more = true; break; }
-      const key = 'ecole_' + x.ID + '_' + dateStr;
-      if (calSync[key]) continue;
-      const m = String(x.Horaire || '').match(/(\d{1,2}):(\d{2})-(\d{1,2}):(\d{2})/);
+      const ids = g.membres.map(x => String(x.ID)).sort();
+      const key = 'ecoleG_' + ids.join('+') + '_' + dateStr;
+      // déjà créé (nouvelle clé, ou ancienne clé par enfant d'avant ce correctif)
+      if (calSync[key] || g.membres.some(x => calSync['ecole_' + x.ID + '_' + dateStr])) continue;
+      const m = String(g.horaire || '').match(/(\d{1,2}):(\d{2})-(\d{1,2}):(\d{2})/);
       if (!m) continue;
       const start = new Date(d); start.setHours(+m[1], +m[2], 0, 0);
       const end = new Date(d); end.setHours(+m[3], +m[4], 0, 0);
-      const enf = enfants.find(e => String(e.ID) === String(x.EnfantID)) || {};
+      const noms = g.membres.map(x => (enfants.find(e => String(e.ID) === String(x.EnfantID)) || {}).Nom || '')
+        .filter((v, k, a) => v && a.indexOf(v) === k);
+      const titre = '🏫 ' + noms.join(' & ') + ' — ' + g.matiere;
+      const deja = existants[cleEvt_(titre, start)];
+      if (deja) { calSyncSet_(calSync, key, deja); continue; } // adopte l'événement existant
       // Créé directement sur l'agenda partagé "Famille" : visible chez tout le monde,
       // pas besoin d'invitation individuelle à accepter.
-      const event = cal.createEvent('🏫 ' + (enf.Nom || '') + ' — ' + x.Matiere, start, end);
+      const event = cal.createEvent(titre, start, end);
       // Rappel seulement si en plus explicitement demandé (case "ecoleAlerte").
       if (cfg.ecoleAlerte) addReminders_(event, cfg, false);
       calSyncSet_(calSync, key, event.getId());
+      existants[cleEvt_(titre, start)] = event.getId();
       n++;
     }
   }
@@ -759,6 +823,7 @@ function syncCoursVersAgenda_(cfg, horizonJours, deadline) {
   const aFaire = read_('Sessions')
     .filter(s => s.Statut === 'Prévue' && String(s.Date).slice(0, 10) >= todayStr && String(s.Date).slice(0, 10) <= limiteStr);
   const calSync = chargerCalSync_();
+  const existants = chargerEvenementsExistants_(cal, horizonJours);
   let n = 0, more = false;
   for (const s of aFaire) {
     if (Date.now() > deadline) { more = true; break; }
@@ -774,9 +839,13 @@ function syncCoursVersAgenda_(cfg, horizonJours, deadline) {
     const enf = enfants.find(e => String(e.ID) === String(c.EnfantID)) || {};
     // Créé directement sur l'agenda partagé "Famille" : visible chez tout le monde,
     // pas besoin d'invitation individuelle à accepter.
-    const event = cal.createEvent('📚 ' + (enf.Nom || '') + ' — ' + c.Matiere + (c.Prof ? ' (' + c.Prof + ')' : ''), start, end);
+    const titre = '📚 ' + (enf.Nom || '') + ' — ' + c.Matiere + (c.Prof ? ' (' + c.Prof + ')' : '');
+    const deja = existants[cleEvt_(titre, start)];
+    if (deja) { calSyncSet_(calSync, key, deja); continue; } // adopte l'événement existant (pas de doublon)
+    const event = cal.createEvent(titre, start, end);
     addReminders_(event, cfg, true);
     calSyncSet_(calSync, key, event.getId());
+    existants[cleEvt_(titre, start)] = event.getId();
     n++;
 
     // Rappel "récupération" 30 min avant la FIN du cours : un petit événement à part
@@ -789,12 +858,16 @@ function syncCoursVersAgenda_(cfg, horizonJours, deadline) {
         if (!calSync[keyFin]) {
           const finStart = new Date(end.getTime() - 30 * 60000);
           const finEnd = new Date(finStart.getTime() + 60000); // 1 min, juste pour exister
-          const eventFin = cal.createEvent(
-            '🚗 Récupération ' + (enf.Nom || '') + ' — le cours se termine dans 30 min',
-            finStart, finEnd
-          );
-          eventFin.addPopupReminder(0); // notifie immédiatement à l'heure de cet événement
-          calSyncSet_(calSync, keyFin, eventFin.getId());
+          const titreFin = '🚗 Récupération ' + (enf.Nom || '') + ' — le cours se termine dans 30 min';
+          const dejaFin = existants[cleEvt_(titreFin, finStart)];
+          if (dejaFin) {
+            calSyncSet_(calSync, keyFin, dejaFin);
+          } else {
+            const eventFin = cal.createEvent(titreFin, finStart, finEnd);
+            eventFin.addPopupReminder(0); // notifie immédiatement à l'heure de cet événement
+            calSyncSet_(calSync, keyFin, eventFin.getId());
+            existants[cleEvt_(titreFin, finStart)] = eventFin.getId();
+          }
         }
       }
     }
@@ -808,7 +881,8 @@ function syncCoursVersAgenda_(cfg, horizonJours, deadline) {
  * si tout n'a pas pu être fait, "more" indique qu'il faut relancer (l'appli le fait
  * automatiquement en boucle depuis le bouton "Synchroniser").
  */
-function syncCalendrier() {
+function syncCalendrier() { return avecVerrou_(syncCalendrierInterne_); }
+function syncCalendrierInterne_() {
   const cfg = getConfig();
   if (!cfg.veille && !cfg.matin && !cfg.uneHeure && !cfg.ecoleAgenda) return { n: 0, more: false };
   const deadline = Date.now() + 4.5 * 60 * 1000; // marge de sécurité sous la limite de 6 min
@@ -827,7 +901,8 @@ function syncCalendrierManuel() { return syncCalendrier(); }
  * La suppression elle-même est aussi bornée dans le temps pour rester fiable
  * même avec beaucoup d'événements déjà créés.
  */
-function resyncCalendrier() {
+function resyncCalendrier() { return avecVerrou_(resyncCalendrierInterne_); }
+function resyncCalendrierInterne_() {
   const deadline = Date.now() + 4.5 * 60 * 1000; // budget unique partagé suppression + recréation
   const rows = read_('CalSync');
   let i = 0;
@@ -851,7 +926,8 @@ function resyncCalendrier() {
  * et vide le suivi "CalSync". Borné dans le temps comme les autres : si tout n'a
  * pas pu être supprimé, "more" indique qu'il faut relancer.
  */
-function supprimerToutesAlertes() {
+function supprimerToutesAlertes() { return avecVerrou_(supprimerToutesAlertesInterne_); }
+function supprimerToutesAlertesInterne_() {
   const deadline = Date.now() + 4.5 * 60 * 1000;
   const rows = read_('CalSync');
   let i = 0;
@@ -889,4 +965,38 @@ function testAlerte() {
 function installerDeclencheurs() {
   ScriptApp.getProjectTriggers().forEach(t => ScriptApp.deleteTrigger(t));
   ScriptApp.newTrigger('syncCalendrier').timeBased().everyDays(1).atHour(6).create();
+}
+
+/**
+ * Supprime les événements EN DOUBLE (même titre, même début, même fin) de l'agenda partagé
+ * "Famille" sur les 60 prochains jours : en garde un seul. Appelable depuis Réglages.
+ */
+function supprimerDoublons() { return avecVerrou_(supprimerDoublonsInterne_); }
+function supprimerDoublonsInterne_() {
+  const cal = familleCal_();
+  const vus = {};
+  let n = 0;
+  cal.getEvents(new Date(Date.now() - 86400000), new Date(Date.now() + 60 * 86400000)).forEach(ev => {
+    const k = ev.getTitle() + '|' + ev.getStartTime().getTime() + '|' + ev.getEndTime().getTime();
+    if (vus[k]) { ev.deleteEvent(); n++; } else vus[k] = true;
+  });
+  return { n: n, more: false };
+}
+
+/**
+ * À lancer UNE FOIS à la main depuis l'éditeur Apps Script (▶ Exécuter), pas depuis l'appli.
+ * Avant le passage à l'agenda partagé "Famille", les événements étaient créés sur le calendrier
+ * PERSONNEL du compte qui exécute le script (avec invitation des parents). S'il en reste, ils
+ * s'ajoutent à ceux de l'agenda Famille -> notifications en double. Cette fonction supprime,
+ * dans le calendrier personnel, les événements FUTURS dont le titre commence par 📚, 🏫 ou
+ * 🚗 Récupération (ceux créés par l'appli). Le résultat s'affiche dans Affichage > Journaux.
+ */
+function nettoyerAnciensEvenementsPerso() {
+  const perso = CalendarApp.getDefaultCalendar();
+  let n = 0;
+  perso.getEvents(new Date(), new Date(Date.now() + 365 * 86400000)).forEach(ev => {
+    const t = ev.getTitle();
+    if (t.indexOf('📚 ') === 0 || t.indexOf('🏫 ') === 0 || t.indexOf('🚗 Récupération') === 0) { ev.deleteEvent(); n++; }
+  });
+  Logger.log(n + ' ancien(s) événement(s) supprimé(s) du calendrier personnel.');
 }

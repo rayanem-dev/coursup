@@ -978,6 +978,7 @@ function vSet(){
     +'<div class="actions"><button class="b p" onclick="saveConfigForm()">Enregistrer</button>'
     +'<button class="b" onclick="syncNow()">🔄 Synchroniser maintenant</button>'
     +'<button class="b" onclick="resyncNow()">♻️ Tout resynchroniser</button>'
+    +'<button class="b" onclick="dedupeNow()">🧹 Supprimer les doublons</button>'
     +'<button class="b d" onclick="deleteAllNow()">🗑 Supprimer toutes les alertes</button>'
     +'<button class="b" onclick="testAlerteNow()">🔔 Tester une alerte maintenant</button></div>'
     +'<div class="sub" style="margin-top:6px">Sans le déclencheur automatique installé une fois dans Apps Script (voir dernier message), il faut cliquer "Synchroniser" pour créer les événements. Après un changement de préférences, utilise "Tout resynchroniser" pour que ça s\'applique aux événements déjà créés.</div></div>'
@@ -1079,6 +1080,13 @@ function deleteAllNow(){
     alert(total?total+' alerte(s) supprimée(s).':'Aucune alerte à supprimer.');
     boot();
   });
+}
+function dedupeNow(){
+  document.getElementById('app').style.opacity=.5;
+  apiCall('supprimerDoublons',[]).then(function(res){
+    document.getElementById('app').style.opacity=1;
+    alert(res&&res.n?res.n+' événement(s) en double supprimé(s) de l\'agenda Famille.':'Aucun doublon trouvé dans l\'agenda Famille.');
+  }).catch(function(e){document.getElementById('app').style.opacity=1;alert(e.message||e);});
 }
 function testAlerteNow(){
   document.getElementById('app').style.opacity=.5;

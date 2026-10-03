@@ -281,6 +281,10 @@
   @media(max-width:599px){.tiles{gap:8px}.tile{padding:8px 6px}.ring{width:66px;height:66px}.ring text{font-size:19px}.tile .big{font-size:19px}.tile .lbl{font-size:11px}}
   .warnline{font-size:12px;background:#fff9db;border:1px solid #ffe066;border-radius:8px;padding:5px 9px;color:#8a6d00}
   .warnline a{color:var(--pri);cursor:pointer;text-decoration:underline;font-weight:600}
+  .toast{position:fixed;left:50%;bottom:calc(18px + env(safe-area-inset-bottom,0px));transform:translate(-50%,30px);background:#1f2430;color:#fff;border-radius:99px;padding:10px 12px 10px 18px;display:flex;align-items:center;gap:12px;font-size:14px;box-shadow:0 8px 24px rgba(0,0,0,.3);opacity:0;pointer-events:none;transition:opacity .25s,transform .25s;z-index:40;max-width:92vw}
+  .toast.on{opacity:1;transform:translate(-50%,0);pointer-events:auto}
+  .toast button{background:#fff;color:#1f2430;border:0;border-radius:99px;padding:6px 14px;font-weight:700;cursor:pointer;font-size:13px}
+  details.trash summary{cursor:pointer;font-weight:600;color:var(--mut);padding:2px 0}
 </style>
 </head>
 <body>
@@ -288,11 +292,12 @@
 <nav id="tabs"></nav>
 <main id="app"><div class="empty">Chargement…</div></main>
 <footer id="ver"></footer>
+<div id="toast" class="toast"></div>
 <div id="modal" class="modal hidden" onclick="if(event.target===this)closeM()"><div class="box" id="box"></div></div>
 
 <script>
 var DEFAULT_API_URL = 'https://script.google.com/macros/s/AKfycbztgTfXpHNmpSmF4wXVNbv7LqFXVeSNW2N08xux8FYyjLW_jhjolPIxQTBDjHbAFU_1/exec';
-var APP_VERSION='2026.10.04.6';
+var APP_VERSION='2026.10.04.7';
 var D = {enfants:[], cours:[], seances:[], paiements:[], ecole:[], config:{emailPere:'',emailMere:'',veille:false,matin:false,uneHeure:false,ecoleAgenda:false,ecoleAlerte:false,rappelFin:true,alertePaiement:true}};
 var tab = 'home', fCours = '', fMonth = today().slice(0,7), calMonth = today().slice(0,7), bEdited = false;
 var STAT = ['Prévue','Faite','Annulée','Reportée'];
@@ -315,7 +320,13 @@ function fs(s){var d=new Date(String(s).slice(0,10)+'T00:00');return isNaN(d)?s:
 function v(id){return document.getElementById(id).value;}
 function same(a,b){return String(a)===String(b);}
 var IDX=null, CY={};
-function setD(d){D=d;IDX=null;CY={};}
+function setD(d){
+  // Les séances supprimées vont dans la corbeille (restaurables) et n'apparaissent plus ailleurs.
+  var all=d.seances||[];
+  d.corbeille=all.filter(function(x){return x.Statut==='Supprimée';});
+  d.seances=all.filter(function(x){return x.Statut!=='Supprimée';});
+  D=d;IDX=null;CY={};
+}
 function idx(){
   if(!IDX){
     IDX={enf:{},crs:{},ses:{}};
@@ -1120,7 +1131,12 @@ function vSeances(){
         +'<div class="grow"><span style="font-size:16px;font-weight:700">'+subjIconBig(crs(s.CoursID).Matiere)+' '+esc(cname(crs(s.CoursID)))+'</span><div class="sub">'+esc(fd(s.Date))+choraire(crs(s.CoursID))+(s.Note?' · '+esc(s.Note):'')+'</div></div>'
         +'<span class="badge '+s.Statut+'">'+s.Statut+'</span>'
         +(s.Statut==='Prévue'?'<button class="b i" title="Décaler / reporter" onclick="openReport(\''+s.ID+'\')">↪</button>':'')
-        +'<button class="b i" onclick="openSeance(\''+s.ID+'\')">✎</button></div>';}).join(''):'<div class="empty">Aucune séance</div>')+'</div></div>';
+        +'<button class="b i" onclick="openSeance(\''+s.ID+'\')">✎</button></div>';}).join(''):'<div class="empty">Aucune séance</div>')+'</div></div>'
+    +((D.corbeille||[]).length?'<div class="card"><details class="trash"><summary>🗑 Corbeille ('+D.corbeille.length+') — séances supprimées</summary>'
+      +D.corbeille.slice().sort(function(a,b){return String(b.Date)<String(a.Date)?-1:1;}).map(function(s){
+        return '<div class="row"><div class="grow"><b>'+subjIconBig(crs(s.CoursID).Matiere)+' '+esc(cname(crs(s.CoursID)))+'</b><div class="sub">'+esc(fd(s.Date))+(s.Avant?' · était « '+esc(s.Avant)+' »':'')+'</div></div>'
+          +'<button class="b p" onclick="restoreSeance(\''+s.ID+'\')">↩ Restaurer</button></div>';}).join('')
+      +'</details></div>':'');
 }
 
 function vPaie(){
@@ -1364,8 +1380,34 @@ function openSeance(id,cid,date){
    +'<label>Statut</label><select id="m-s">'+STAT.map(function(x){return '<option'+(x===s.Statut?' selected':'')+'>'+x+'</option>';}).join('')+'</select>'
    +'<label>Note (ex. séance déplacée)</label><input id="m-n" value="'+esc(s.Note)+'">'
    +'<div class="actions"><button class="b p" onclick="okSeance(\''+(id||'')+'\')">Enregistrer</button>'
-   +(id?'<button class="b d" onclick="if(confirm(\'Supprimer cette séance ?\')){closeM();call(\'deleteSeance\',\''+id+'\')}">Supprimer</button>':'')
+   +(id?'<button class="b d" onclick="delSeance(\''+id+'\')">Supprimer</button>':'')
    +'<button class="b" onclick="closeM()">Annuler</button></div>');
+}
+// Suppression "douce" : la séance part dans la corbeille et on peut annuler tout de suite.
+function delSeance(id){
+  closeM();
+  var s=seance(id);if(!s)return;
+  D.seances=D.seances.filter(function(x){return !same(x.ID,id);});
+  s.Avant=s.Statut;s.Statut='Supprimée';D.corbeille=(D.corbeille||[]).concat(s);
+  IDX=null;CY={};render();
+  callQ_('deleteSeance',[id],true);
+  showToast('Séance du '+fs(s.Date)+' supprimée','Annuler',function(){restoreSeance(id);},9000);
+}
+function restoreSeance(id){
+  var s=(D.corbeille||[]).find(function(x){return same(x.ID,id);});if(!s)return;
+  D.corbeille=D.corbeille.filter(function(x){return !same(x.ID,id);});
+  s.Statut=s.Avant||'Prévue';s.Avant='';D.seances=D.seances.concat(s);
+  IDX=null;CY={};render();
+  callQ_('restoreSeance',[id],true);
+  showToast('Séance restaurée ✓',null,null,3000);
+}
+var toastT=null;
+function showToast(msg,label,fn,ms){
+  var t=document.getElementById('toast');if(!t)return;
+  t.innerHTML='<span>'+esc(msg)+'</span>'+(label?'<button id="toast-b">'+esc(label)+'</button>':'');
+  t.classList.add('on');
+  if(label)document.getElementById('toast-b').onclick=function(){t.classList.remove('on');fn();};
+  clearTimeout(toastT);toastT=setTimeout(function(){t.classList.remove('on');},ms||5000);
 }
 function okSeance(id){
   var o={Date:v('m-d'),CoursID:v('m-c'),Statut:v('m-s'),Note:v('m-n')};

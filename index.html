@@ -265,7 +265,7 @@
 
 <script>
 var DEFAULT_API_URL = 'https://script.google.com/macros/s/AKfycbztgTfXpHNmpSmF4wXVNbv7LqFXVeSNW2N08xux8FYyjLW_jhjolPIxQTBDjHbAFU_1/exec';
-var APP_VERSION='2026.10.04.3';
+var APP_VERSION='2026.10.04.4';
 var D = {enfants:[], cours:[], seances:[], paiements:[], ecole:[], config:{emailPere:'',emailMere:'',veille:false,matin:false,uneHeure:false,ecoleAgenda:false,ecoleAlerte:false,rappelFin:true,alertePaiement:true}};
 var tab = 'home', fCours = '', fMonth = today().slice(0,7), calMonth = today().slice(0,7), bEdited = false;
 var STAT = ['Prévue','Faite','Annulée','Reportée'];
@@ -988,14 +988,24 @@ function vTodo(){
       return ha<hb?-1:(ha>hb?1:0);
     });
   if(!all.length)return '';
-  return '<div class="card"><div class="head"><h2>✅ Séances à venir</h2><span class="badge Prévue">'+all.length+'</span></div>'
+  // Seulement la semaine en cours (dimanche → samedi) + les séances passées non validées ;
+  // les semaines suivantes sont masquées et apparaissent au fur et à mesure, semaine par semaine.
+  var wk=weekBounds(t);
+  var week=all.filter(function(s){return String(s.Date).slice(0,10)<wk.end;});
+  var cache=all.length-week.length;
+  if(!week.length){
+    return '<div class="card"><div class="head"><h2>✅ Séances à venir</h2></div>'
+      +'<div class="empty" style="padding:10px 0">Aucune séance restante cette semaine 🎉'+(cache?'<br><span class="sub">'+cache+' séance'+(cache>1?'s':'')+' la semaine prochaine (affichées dès dimanche)</span>':'')+'</div></div>';
+  }
+  return '<div class="card"><div class="head"><h2>✅ Séances de la semaine</h2><span class="badge Prévue">'+week.length+'</span></div>'
     +'<div class="sub">Coche la case quand la séance a eu lieu. Pour une séance passée non faite, clique sur « Non faite » pour la décaler.</div>'
-    +all.map(function(s){
+    +week.map(function(s){
       var c=crs(s.CoursID), d=String(s.Date).slice(0,10), late=d<=t;
       return '<div class="row"><label class="chk grow" style="margin:0"><input type="checkbox" onchange="setStat(\''+s.ID+'\',\'Faite\')">'
         +'<span><span style="font-size:16px;font-weight:700">'+subjIconBig(c.Matiere)+' '+esc(cname(c))+'</span><br><span class="sub">'+esc(fd(s.Date))+choraire(c)+'</span></span></label>'
         +(late?'<button class="b i" onclick="openReport(\''+s.ID+'\')">↪ Non faite</button>':'<span class="badge Prévue">à venir</span>')+'</div>';
-    }).join('')+'</div>';
+    }).join('')
+    +(cache?'<div class="sub" style="text-align:center;padding-top:10px">+ '+cache+' séance'+(cache>1?'s':'')+' les semaines suivantes (affichées dès dimanche)</div>':'')+'</div>';
 }
 
 function calMove(n){var p=calMonth.split('-').map(Number);calMonth=iso(new Date(p[0],p[1]-1+n,1)).slice(0,7);render();}

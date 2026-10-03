@@ -7,6 +7,8 @@
  * pendant UNE exécution (voir "Cache par exécution"), au lieu d'être relus des dizaines
  * de fois à chaque action.
  */
+// Version du serveur : à garder identique à APP_VERSION dans index.html (affichée en bas de l'appli).
+const VERSION = '2026.10.04.2';
 const SS_ID = '1l-Em-TfMp8jS5kFfntUfnyPYZghl7BHvcUCUvZ6oM8Y';
 // Agenda PARTAGÉ "Famille" : tous les événements (cours + lycée) sont créés directement
 // dessus, au lieu du calendrier personnel de celui qui exécute le script. Comme c'est un
@@ -543,7 +545,8 @@ function getData() {
     seances: read_('Sessions'),
     paiements: read_('Versements'),
     ecole: read_('Ecole'),
-    config: getConfig()
+    config: getConfig(),
+    version: VERSION
   };
 }
 
@@ -834,7 +837,7 @@ function syncEcoleVersAgenda_(cfg, horizonJours, deadline) {
       const end = new Date(d); end.setHours(+m[3], +m[4], 0, 0);
       const noms = g.membres.map(x => (enfants.find(e => String(e.ID) === String(x.EnfantID)) || {}).Nom || '')
         .filter((v, k, a) => v && a.indexOf(v) === k);
-      const titre = '🏫 ' + noms.join(' & ') + ' — ' + g.matiere;
+      const titre = '🏫 ' + (noms.length > 1 ? 'Enfants' : (noms[0] || '')) + ' — ' + g.matiere;
       const deja = existants[cleEvt_(titre, start)];
       if (deja) { calSyncSet_(calSync, key, deja); continue; } // adopte l'événement existant
       // Créé directement sur l'agenda partagé "Famille" : visible chez tout le monde,
@@ -850,7 +853,8 @@ function syncEcoleVersAgenda_(cfg, horizonJours, deadline) {
   return { n, more, echecs: [] };
 }
 
-/** Crée les événements manquants pour les séances de cours particuliers "Prévue" à venir. */
+/** Crée les événements manquants pour les séances de cours particuliers "Prévue" à venir.
+ *  Même date + même matière + même horaire pour plusieurs enfants = UN SEUL événement, intitulé "Enfants". */
 function syncCoursVersAgenda_(cfg, horizonJours, deadline) {
   const cours = read_('Cours');
   const enfants = read_('Enfants');
@@ -861,25 +865,40 @@ function syncCoursVersAgenda_(cfg, horizonJours, deadline) {
     .filter(s => s.Statut === 'Prévue' && String(s.Date).slice(0, 10) >= todayStr && String(s.Date).slice(0, 10) <= limiteStr);
   const calSync = chargerCalSync_();
   const existants = chargerEvenementsExistants_(cal, horizonJours);
-  let n = 0, more = false;
-  for (const s of aFaire) {
-    if (Date.now() > deadline) { more = true; break; }
-    const key = 'cours_' + s.ID;
-    if (calSync[key]) continue;
+  const groupes = {};
+  aFaire.forEach(s => {
     const c = cours.find(c => String(c.ID) === String(s.CoursID));
-    if (!c || !c.Heure) continue;
+    if (!c || !c.Heure) return;
     const m = String(c.Heure).match(/(\d{1,2}):(\d{2})-(\d{1,2}):(\d{2})/);
-    if (!m) continue;
-    const dateBase = new Date(String(s.Date).slice(0, 10) + 'T00:00');
+    if (!m) return;
+    const date = String(s.Date).slice(0, 10);
+    const k = date + '|' + normMat_(c.Matiere) + '|' + c.Heure;
+    (groupes[k] = groupes[k] || { date: date, m: m, items: [] }).items.push({ s: s, c: c });
+  });
+  const uniq = a => a.filter((v, i) => v && a.indexOf(v) === i);
+  let n = 0, more = false;
+  for (const k of Object.keys(groupes).sort()) {
+    if (Date.now() > deadline) { more = true; break; }
+    const gr = groupes[k];
+    const ids = gr.items.map(x => String(x.s.ID)).sort();
+    const key = ids.length === 1 ? 'cours_' + ids[0] : 'coursG_' + ids.join('+');
+    if (calSync[key] || gr.items.some(x => calSync['cours_' + x.s.ID])) continue;
+    const m = gr.m;
+    const dateBase = new Date(gr.date + 'T00:00');
     const start = new Date(dateBase); start.setHours(+m[1], +m[2], 0, 0);
     const end = new Date(dateBase); end.setHours(+m[3], +m[4], 0, 0);
-    const enf = enfants.find(e => String(e.ID) === String(c.EnfantID)) || {};
-    // Créé directement sur l'agenda partagé "Famille" : visible chez tout le monde,
-    // pas besoin d'invitation individuelle à accepter.
-    const titre = '📚 ' + (enf.Nom || '') + ' — ' + c.Matiere + (c.Prof ? ' (' + c.Prof + ')' : '');
+    const noms = uniq(gr.items.map(x => (enfants.find(e => String(e.ID) === String(x.c.EnfantID)) || {}).Nom || ''));
+    const qui = noms.length > 1 ? 'Enfants' : (noms[0] || '');
+    const profs = uniq(gr.items.map(x => String(x.c.Prof || '').trim()));
+    const c0 = gr.items[0].c;
+    const lieux = uniq(gr.items.map(x => String(x.c.Lieu || '').trim()));
+    const opts = lieux.length === 1 ? { location: lieux[0] } : {};
+    const titre = '📚 ' + qui + ' — ' + c0.Matiere + (profs.length === 1 ? ' (' + profs[0] + ')' : '');
     const deja = existants[cleEvt_(titre, start)];
     if (deja) { calSyncSet_(calSync, key, deja); continue; } // adopte l'événement existant (pas de doublon)
-    const event = cal.createEvent(titre, start, end, lieuOpts_(c));
+    // Créé directement sur l'agenda partagé "Famille" : visible chez tout le monde,
+    // pas besoin d'invitation individuelle à accepter.
+    const event = cal.createEvent(titre, start, end, opts);
     addReminders_(event, cfg, true);
     calSyncSet_(calSync, key, event.getId());
     existants[cleEvt_(titre, start)] = event.getId();
@@ -891,16 +910,16 @@ function syncCoursVersAgenda_(cfg, horizonJours, deadline) {
     if (cfg.rappelFin) {
       const dureeMin = (end.getTime() - start.getTime()) / 60000;
       if (dureeMin > 30) {
-        const keyFin = 'coursFin_' + s.ID;
+        const keyFin = ids.length === 1 ? 'coursFin_' + ids[0] : 'coursFinG_' + ids.join('+');
         if (!calSync[keyFin]) {
           const finStart = new Date(end.getTime() - 30 * 60000);
           const finEnd = new Date(finStart.getTime() + 60000); // 1 min, juste pour exister
-          const titreFin = '🚗 Récupération ' + (enf.Nom || '') + ' — le cours se termine dans 30 min';
+          const titreFin = '🚗 Récupération ' + qui + ' — le cours se termine dans 30 min';
           const dejaFin = existants[cleEvt_(titreFin, finStart)];
           if (dejaFin) {
             calSyncSet_(calSync, keyFin, dejaFin);
           } else {
-            const eventFin = cal.createEvent(titreFin, finStart, finEnd, lieuOpts_(c));
+            const eventFin = cal.createEvent(titreFin, finStart, finEnd, opts);
             eventFin.addPopupReminder(0); // notifie immédiatement à l'heure de cet événement
             calSyncSet_(calSync, keyFin, eventFin.getId());
             existants[cleEvt_(titreFin, finStart)] = eventFin.getId();
@@ -929,7 +948,8 @@ function premierJourCours_(c, from) {
  *  - une alerte 1 semaine avant,
  *  - une alerte à l'avant-dernière séance du cycle en cours,
  *  - une alerte à l'heure de l'événement.
- * L'événement est retiré dès que le prochain cycle est payé ou si l'échéance change.
+ * Même date + même matière + même horaire pour plusieurs enfants = UN SEUL événement ("Enfants",
+ * montant cumulé). L'événement est retiré dès que le prochain cycle est payé ou si l'échéance change.
  */
 function syncPaiementsVersAgenda_(cfg, deadline) {
   if (!cfg.alertePaiement) return { n: 0, more: false, echecs: [] };
@@ -939,13 +959,14 @@ function syncPaiementsVersAgenda_(cfg, deadline) {
   const calSync = chargerCalSync_();
   const existants = chargerEvenementsExistants_(cal, 45);
   const t = fmt_(new Date());
-  let n = 0, more = false;
-  for (const c of cours) {
-    if (Date.now() > deadline) { more = true; break; }
+  const uniq = a => a.filter((v, i) => v && a.indexOf(v) === i);
+
+  const groupes = {};
+  cours.forEach(c => {
     const prix = Number(c.PrixMois) || 0;
-    if (prix <= 0) continue; // cours gratuit : pas de paiement
+    if (prix <= 0) return; // cours gratuit : pas de paiement
     const starts = cycleStarts_(c);
-    if (!starts.length) continue;
+    if (!starts.length) return;
     let cur = starts[0];
     starts.forEach(s => { if (s <= t) cur = s; });
     const idx = starts.indexOf(cur);
@@ -953,35 +974,55 @@ function syncPaiementsVersAgenda_(cfg, deadline) {
     if (idx < starts.length - 1) end = starts[idx + 1];
     else { while (addMonth_(cur, 1) <= t) cur = addMonth_(cur, 1); end = addMonth_(cur, 1); }
     const due = premierJourCours_(c, end);
-    const key = 'pay_' + c.ID + '_' + due;
     const payeProchain = paiements.some(p => String(p.CoursID) === String(c.ID) && pstart_(p) >= addDays_(end, -7));
-    // retire les anciens événements de paiement de ce cours (échéance changée ou prochain cycle déjà payé)
-    Object.keys(calSync).filter(k => k.indexOf('pay_' + c.ID + '_') === 0 && (k !== key || payeProchain)).forEach(k => {
-      try { const ev = getEvenementParId_(calSync[k]); if (ev) ev.deleteEvent(); } catch (e) { /* déjà supprimé */ }
-      delete_('CalSync', k);
-      delete calSync[k];
-    });
-    if (payeProchain || calSync[key] || due > addDays_(t, 45)) continue;
+    if (payeProchain || due > addDays_(t, 45)) return;
+    const k = due + '|' + normMat_(c.Matiere) + '|' + String(c.Heure || '');
+    (groupes[k] = groupes[k] || { due: due, items: [] }).items.push({ c: c, prix: prix, cur: cur, end: end });
+  });
 
-    const m = String(c.Heure || '').match(/(\d{1,2}):(\d{2})-(\d{1,2}):(\d{2})/) || [null, 9, 0, 9, 30];
-    const dp = due.split('-').map(Number);
+  // retire les événements de paiement qui ne sont plus d'actualité (échéance changée, cycle payé, regroupement)
+  const keyDe = g => 'pay_' + g.items.map(x => String(x.c.ID)).sort().join('+') + '_' + g.due;
+  const valides = {};
+  Object.keys(groupes).forEach(k => { valides[keyDe(groupes[k])] = true; });
+  Object.keys(calSync).filter(k => k.indexOf('pay_') === 0 && !valides[k]).forEach(k => {
+    try { const ev = getEvenementParId_(calSync[k]); if (ev) ev.deleteEvent(); } catch (e) { /* déjà supprimé */ }
+    delete_('CalSync', k);
+    delete calSync[k];
+  });
+
+  let n = 0, more = false;
+  for (const k of Object.keys(groupes).sort()) {
+    if (Date.now() > deadline) { more = true; break; }
+    const gr = groupes[k], key = keyDe(gr);
+    if (calSync[key]) continue;
+    const c0 = gr.items[0].c;
+    const m = String(c0.Heure || '').match(/(\d{1,2}):(\d{2})-(\d{1,2}):(\d{2})/) || [null, 9, 0, 9, 30];
+    const dp = gr.due.split('-').map(Number);
     const start = new Date(dp[0], dp[1] - 1, dp[2], +m[1], +m[2], 0, 0);
     const fin = new Date(dp[0], dp[1] - 1, dp[2], +m[3], +m[4], 0, 0);
-    const enf = enfants.find(e => String(e.ID) === String(c.EnfantID)) || {};
-    const titre = '💳 Paiement — ' + (enf.Nom || '') + ' — ' + c.Matiere + (c.Prof ? ' (' + c.Prof + ')' : '') + ' : ' + prix + ' DA';
+    const noms = uniq(gr.items.map(x => (enfants.find(e => String(e.ID) === String(x.c.EnfantID)) || {}).Nom || ''));
+    const qui = noms.length > 1 ? 'Enfants' : (noms[0] || '');
+    const profs = uniq(gr.items.map(x => String(x.c.Prof || '').trim()));
+    const total = gr.items.reduce((a, x) => a + x.prix, 0);
+    const lieux = uniq(gr.items.map(x => String(x.c.Lieu || '').trim()));
+    const titre = '💳 Paiement — ' + qui + ' — ' + c0.Matiere + (profs.length === 1 ? ' (' + profs[0] + ')' : '') + ' : ' + total + ' DA';
     const deja = existants[cleEvt_(titre, start)];
     if (deja) { calSyncSet_(calSync, key, deja); continue; }
-    const event = cal.createEvent(titre, start, fin, Object.assign({ description: 'Premier jour du nouveau cycle : paiement à régler (' + prix + ' DA).' }, lieuOpts_(c)));
+    const event = cal.createEvent(titre, start, fin, Object.assign(
+      { description: 'Premier jour du nouveau cycle : paiement à régler (' + total + ' DA).' },
+      lieux.length === 1 ? { location: lieux[0] } : {}));
     const minutes = [7 * 24 * 60, 0];
-    // alerte à l'avant-dernière séance du cycle en cours
-    const ds = sessions.filter(s => String(s.CoursID) === String(c.ID) && (s.Statut === 'Faite' || s.Statut === 'Prévue'))
-      .map(s => String(s.Date).slice(0, 10)).filter(d => d >= cur && d < end).sort();
-    if (ds.length >= 2) {
-      const pp = ds[ds.length - 2].split('-').map(Number);
-      const pen = new Date(pp[0], pp[1] - 1, pp[2], +m[1], +m[2], 0, 0);
-      const diff = Math.round((start.getTime() - pen.getTime()) / 60000);
-      if (diff > 0 && diff <= 40320) minutes.push(diff);
-    }
+    // alerte à l'avant-dernière séance du cycle en cours (une par cours du groupe)
+    gr.items.forEach(x => {
+      const ds = sessions.filter(s => String(s.CoursID) === String(x.c.ID) && (s.Statut === 'Faite' || s.Statut === 'Prévue'))
+        .map(s => String(s.Date).slice(0, 10)).filter(d => d >= x.cur && d < x.end).sort();
+      if (ds.length >= 2) {
+        const pp = ds[ds.length - 2].split('-').map(Number);
+        const pen = new Date(pp[0], pp[1] - 1, pp[2], +m[1], +m[2], 0, 0);
+        const diff = Math.round((start.getTime() - pen.getTime()) / 60000);
+        if (diff > 0 && diff <= 40320) minutes.push(diff);
+      }
+    });
     minutes.filter((v, i) => minutes.indexOf(v) === i).forEach(v => event.addPopupReminder(v));
     calSyncSet_(calSync, key, event.getId());
     existants[cleEvt_(titre, start)] = event.getId();

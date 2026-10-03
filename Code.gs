@@ -8,7 +8,7 @@
  * de fois à chaque action.
  */
 // Version du serveur : à garder identique à APP_VERSION dans index.html (affichée en bas de l'appli).
-const VERSION = '2026.10.04.2';
+const VERSION = '2026.10.04.3';
 const SS_ID = '1l-Em-TfMp8jS5kFfntUfnyPYZghl7BHvcUCUvZ6oM8Y';
 // Agenda PARTAGÉ "Famille" : tous les événements (cours + lycée) sont créés directement
 // dessus, au lieu du calendrier personnel de celui qui exécute le script. Comme c'est un
@@ -19,7 +19,7 @@ const FAMILLE_CAL_ID = 'family07166730596940913601@group.calendar.google.com';
 const DAYS = ['Dim', 'Lun', 'Mar', 'Mer', 'Jeu', 'Ven', 'Sam'];
 const SHEETS = {
   Enfants:    ['ID', 'Nom', 'Photo', 'Email'],
-  Cours:      ['ID', 'EnfantID', 'Matiere', 'Prof', 'PrixMois', 'SeancesMois', 'Jours', 'Heure', 'Rattrapage', 'PrixRattrapage', 'Lieu'],
+  Cours:      ['ID', 'EnfantID', 'Matiere', 'Prof', 'PrixMois', 'SeancesMois', 'Jours', 'Heure', 'Rattrapage', 'PrixRattrapage', 'Lieu', 'FraisInscription'],
   Sessions:   ['ID', 'Date', 'CoursID', 'Statut', 'Note'],
   Versements: ['ID', 'Date', 'CoursID', 'Mois', 'Montant', 'Mode', 'Note'],
   Ecole:      ['ID', 'EnfantID', 'Jour', 'Horaire', 'Matiere'],

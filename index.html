@@ -265,7 +265,7 @@
 
 <script>
 var DEFAULT_API_URL = 'https://script.google.com/macros/s/AKfycbztgTfXpHNmpSmF4wXVNbv7LqFXVeSNW2N08xux8FYyjLW_jhjolPIxQTBDjHbAFU_1/exec';
-var APP_VERSION='2026.10.04.2';
+var APP_VERSION='2026.10.04.3';
 var D = {enfants:[], cours:[], seances:[], paiements:[], ecole:[], config:{emailPere:'',emailMere:'',veille:false,matin:false,uneHeure:false,ecoleAgenda:false,ecoleAlerte:false,rappelFin:true,alertePaiement:true}};
 var tab = 'home', fCours = '', fMonth = today().slice(0,7), calMonth = today().slice(0,7), bEdited = false;
 var STAT = ['Prévue','Faite','Annulée','Reportée'];
@@ -475,7 +475,12 @@ function cycles_(c){
   starts.sort();
   return starts.map(function(s,i){
     var cy={start:s,end:i<starts.length-1?starts[i+1]:addMonth(s,1)};
-    if(i===0&&r1>0){cy.rattrapage=true;cy.n=r1;cy.prix=prixRattrapage(c);}
+    if(i===0){
+      // 1er cycle : rattrapage éventuel + frais d'inscription (une seule fois, jamais récurrents)
+      var fee=Number(c.FraisInscription)||0;
+      if(r1>0){cy.rattrapage=true;cy.n=r1;}
+      if(r1>0||fee>0){cy.fee=fee;cy.prix=(r1>0?prixRattrapage(c):(Number(c.PrixMois)||0))+fee;}
+    }
     return cy;
   });
 }
@@ -484,6 +489,10 @@ function prixRattrapage(c){
   var r1=Number(c.Rattrapage)||0, p=Number(c.PrixRattrapage)||0;
   if(p>0)return p;
   return Math.round((Number(c.PrixMois)||0)*r1/(Number(c.SeancesMois)||8));
+}
+// Prix du tout premier paiement d'un cours : (rattrapage ou mois) + frais d'inscription.
+function premierPrix(c){
+  return (Number(c.Rattrapage)>0?prixRattrapage(c):(Number(c.PrixMois)||0))+(Number(c.FraisInscription)||0);
 }
 function curCycle(cys){
   var t=today();
@@ -936,6 +945,7 @@ function courseCard(c){
     :'<div class="okb">✓ Cycle payé — '+fmt(s.paye)+'</div>';
   return '<div class="card cc '+(pending?'pending':'paid')+'" style="--cc:'+col+'">'
     +top+'<span class="badge '+payBadge(s)+'">'+payBadge(s)+'</span></div>'
+    +(cur.fee>0?'<div class="sub" style="color:var(--pri)">🧾 Frais d\'inscription '+fmt(cur.fee)+' inclus dans ce premier paiement (une seule fois)</div>':'')
     +(cur.rattrapage?'<div class="sub" style="color:var(--pri)">🏃 Cycle de rattrapage : '+n+' séance'+(n>1?'s':'')+' puis '+(Number(c.SeancesMois)||8)+' par mois</div>':'')
     +banner
     +'<div><div class="bl"><span>Séances</span><b>'+fait+' faites · '+afaire+' à faire <span style="font-weight:400">/ '+n+'</span></b></div>'
@@ -1131,7 +1141,8 @@ function vSet(){
           +'<div><label>Prix du mois (DA)</label><input class="c-prix" type="number" value="'+esc(c.PrixMois)+'"></div>'
           +'<div><label>Séances par mois</label><input class="c-nb" type="number" value="'+esc(c.SeancesMois||8)+'"></div>'
           +'<div><label>Séances à rattraper (1er cycle)</label><input class="c-ratt" type="number" min="0" value="'+esc(c.Rattrapage||'')+'"></div>'
-          +'<div><label>Prix du rattrapage (DA)</label><input class="c-prixr" type="number" min="0" placeholder="auto" value="'+esc(c.PrixRattrapage||'')+'"></div></div>'
+          +'<div><label>Prix du rattrapage (DA)</label><input class="c-prixr" type="number" min="0" placeholder="auto" value="'+esc(c.PrixRattrapage||'')+'"></div>'
+          +'<div><label>Frais d\'inscription (1re fois, DA)</label><input class="c-frais" type="number" min="0" placeholder="0" value="'+esc(c.FraisInscription||'')+'"></div></div>'
           +'<label>Jours habituels</label><div class="days">'+DAYS.map(function(d){
             return '<label><input type="checkbox" class="c-jour" value="'+d+'"'+(j.indexOf(d)>=0?' checked':'')+'>'+d+'</label>';}).join('')+'</div>'
           +'<label>Horaire (ex. 15:00-16:30)</label><input class="c-heure" value="'+esc(c.Heure||'')+'" placeholder="15:00-16:30">'
@@ -1244,7 +1255,7 @@ function saveCoursForm(btn){
   var c=btn.closest('.course');
   var jours=[].slice.call(c.querySelectorAll('.c-jour:checked')).map(function(x){return x.value;}).join(',');
   call('saveCours',{ID:c.dataset.id,Matiere:c.querySelector('.c-mat').value.trim(),Prof:c.querySelector('.c-prof').value.trim(),
-    PrixMois:Number(c.querySelector('.c-prix').value)||0,SeancesMois:Number(c.querySelector('.c-nb').value)||8,Rattrapage:Number(c.querySelector('.c-ratt').value)||0,PrixRattrapage:Number(c.querySelector('.c-prixr').value)||0,Jours:jours,
+    PrixMois:Number(c.querySelector('.c-prix').value)||0,SeancesMois:Number(c.querySelector('.c-nb').value)||8,Rattrapage:Number(c.querySelector('.c-ratt').value)||0,PrixRattrapage:Number(c.querySelector('.c-prixr').value)||0,FraisInscription:Number(c.querySelector('.c-frais').value)||0,Jours:jours,
     Heure:c.querySelector('.c-heure').value.trim(),Lieu:c.querySelector('.c-lieu').value.trim()});
 }
 function setStat(id,st){
@@ -1265,7 +1276,9 @@ function openNewCours(eid){
    +'<div><label>Prix du mois (DA)</label><input id="n-prix" type="number" value="0"></div>'
    +'<div><label>Séances par mois</label><input id="n-nb" type="number" value="8"></div>'
    +'<div><label>Séances à rattraper (optionnel)</label><input id="n-ratt" type="number" min="0" placeholder="ex. 3"></div>'
-   +'<div><label>Prix du rattrapage (DA)</label><input id="n-prixr" type="number" min="0" placeholder="auto"></div></div>'
+   +'<div><label>Prix du rattrapage (DA)</label><input id="n-prixr" type="number" min="0" placeholder="auto"></div>'
+   +'<div><label>Frais d\'inscription (DA, 1re fois)</label><input id="n-frais" type="number" min="0" placeholder="0"></div></div>'
+   +'<div class="sub">Les frais d\'inscription s\'ajoutent au <b>premier paiement uniquement</b> (jamais récurrents).</div>'
    +'<div class="sub">Tu rejoins en cours de session ? Indique le nombre de séances à rattraper : elles forment un 1er cycle court, puis le cycle normal démarre juste après. Prix « auto » = proportionnel.</div>'
    +'<label>Jours habituels</label><div class="days">'+DAYS.map(function(d){
       return '<label><input type="checkbox" class="n-jour" value="'+d+'">'+d+'</label>';}).join('')+'</div>'
@@ -1281,7 +1294,7 @@ function okNewCours(eid){
   var jours=[].slice.call(document.querySelectorAll('.n-jour:checked')).map(function(x){return x.value;}).join(',');
   if(!jours&&!confirm('Aucun jour habituel choisi : les séances ne seront pas générées automatiquement. Continuer ?'))return;
   closeM();
-  call('saveCours',{EnfantID:eid,Matiere:mat,Prof:v('n-prof').trim(),PrixMois:Number(v('n-prix'))||0,SeancesMois:Number(v('n-nb'))||8,Rattrapage:Number(v('n-ratt'))||0,PrixRattrapage:Number(v('n-prixr'))||0,Jours:jours,Heure:v('n-heure').trim(),Lieu:v('n-lieu').trim()},v('n-d'));
+  call('saveCours',{EnfantID:eid,Matiere:mat,Prof:v('n-prof').trim(),PrixMois:Number(v('n-prix'))||0,SeancesMois:Number(v('n-nb'))||8,Rattrapage:Number(v('n-ratt'))||0,PrixRattrapage:Number(v('n-prixr'))||0,FraisInscription:Number(v('n-frais'))||0,Jours:jours,Heure:v('n-heure').trim(),Lieu:v('n-lieu').trim()},v('n-d'));
 }
 
 function openSeance(id,cid,date){
@@ -1340,7 +1353,7 @@ function suggest(){
   var c=crs(v('m-c')), b=v('m-b');
   var cy=cycles(c).find(function(y){return y.start===b;});
   var amt=cy?Math.max(cyStat(c,cy).reste,0):0;
-  var def=(Number(c.Rattrapage)>0&&!D.paiements.some(function(p){return same(p.CoursID,c.ID);}))?prixRattrapage(c):Number(c.PrixMois);
+  var def=!D.paiements.some(function(p){return same(p.CoursID,c.ID);})?premierPrix(c):Number(c.PrixMois);
   document.getElementById('m-a').value=amt||def||'';
 }
 function onPayDate(){if(!bEdited)document.getElementById('m-b').value=v('m-d');suggest();}
@@ -1351,7 +1364,7 @@ function openPaie(id,cid){
   var c0=x?x.CoursID:(cid||fCours||D.cours[0].ID);
   var d0=x?String(x.Date).slice(0,10):today();
   var b0=x?pstart(x):defaultPeriodStart(c0,d0);
-  var c0o=crs(c0), amt=x?x.Montant:((Number(c0o.Rattrapage)>0&&!D.paiements.some(function(p){return same(p.CoursID,c0);}))?prixRattrapage(c0o):(Number(c0o.PrixMois)||''));
+  var c0o=crs(c0), amt=x?x.Montant:(!D.paiements.some(function(p){return same(p.CoursID,c0);})?(premierPrix(c0o)||''):(Number(c0o.PrixMois)||''));
   x=x||{Mode:'Espèces',Note:''};
   bEdited=!!id||b0!==d0;
   showM('<h2>'+(id?'Modifier':'Nouveau')+' paiement</h2>'

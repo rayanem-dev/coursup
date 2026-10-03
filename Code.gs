@@ -8,7 +8,7 @@
  * de fois à chaque action.
  */
 // Version du serveur : à garder identique à APP_VERSION dans index.html (affichée en bas de l'appli).
-const VERSION = '2026.10.04.9';
+const VERSION = '2026.10.04.10';
 const SS_ID = '1l-Em-TfMp8jS5kFfntUfnyPYZghl7BHvcUCUvZ6oM8Y';
 // Agenda PARTAGÉ "Famille" : tous les événements (cours + lycée) sont créés directement
 // dessus, au lieu du calendrier personnel de celui qui exécute le script. Comme c'est un
@@ -478,41 +478,63 @@ function cycleStartsBase_(cId) {
   return starts;
 }
 
+/** Fin d'une session : le lendemain de sa N-ième séance (faite, prévue ou ratée) à partir de `start`, sinon null. */
+function sessionEnd_(c, start, n) {
+  const ds = read_('Sessions')
+    .filter(s => String(s.CoursID) === String(c.ID) && compteSession_(s) && String(s.Date).slice(0, 10) >= start)
+    .map(s => String(s.Date).slice(0, 10)).sort();
+  return ds.length >= n ? addDays_(ds[n - 1], 1) : null;
+}
+
 /**
- * Dates de début de chaque cycle d'un cours. Cycle de rattrapage : si le cours a "Rattrapage" = N,
- * le 1er cycle ne compte que N séances et se termine le lendemain de la N-ième ; le cycle normal
- * démarre à cette date (sauf si un paiement la définit déjà à ±7 jours près). Même règle que le client.
+ * Débuts de chaque session d'un cours. Une SESSION = un paquet de N séances : elle se termine le lendemain de
+ * sa N-ième séance. Une séance reportée/annulée n'est pas comptée (le remplacement prolonge la session) ;
+ * une séance ratée occupe une place sans être remplacée. Au-delà du dernier paiement connu, les sessions
+ * suivantes sont déduites tant que leur début ne dépasse pas aujourd'hui + horizonJours. Même règle que le client.
  */
-function cycleStarts_(c) {
-  let starts = cycleStartsBase_(c.ID);
-  const r1 = Number(c.Rattrapage) || 0;
-  if (r1 > 0 && starts.length) {
-    const ds = read_('Sessions')
-      .filter(s => String(s.CoursID) === String(c.ID) && compteSession_(s) && String(s.Date).slice(0, 10) >= starts[0])
-      .map(s => String(s.Date).slice(0, 10)).sort();
-    if (ds.length >= r1) {
-      const s2 = addDays_(ds[r1 - 1], 1);
-      if (!starts.slice(1).some(x => x <= addDays_(s2, 7))) starts = starts.concat(s2).sort();
-    }
+function cycleStarts_(c, horizonJours) {
+  const starts = cycleStartsBase_(c.ID);
+  if (!starts.length) return starts;
+  const N = Number(c.SeancesMois) || 8, r1 = Number(c.Rattrapage) || 0;
+  const limite = addDays_(fmt_(new Date()), horizonJours || 0);
+  let cur = starts[starts.length - 1], k = (starts.length === 1 && r1 > 0) ? r1 : N;
+  for (let g = 0; g < 60; g++) {
+    const e = sessionEnd_(c, cur, k);
+    if (!e || e > limite) break;
+    starts.push(e); cur = e; k = N;
   }
   return starts;
 }
 
+/** Session en cours à la date `t` : { cur: début, end: fin }. */
+function sessionBounds_(c, t) {
+  const starts = cycleStarts_(c, 0);
+  if (!starts.length) return null;
+  let idx = 0;
+  starts.forEach((s, i) => { if (s <= t) idx = i; });
+  const cur = starts[idx];
+  let end;
+  if (idx < starts.length - 1) end = starts[idx + 1];
+  else {
+    const N = Number(c.SeancesMois) || 8, r1 = Number(c.Rattrapage) || 0;
+    end = sessionEnd_(c, cur, (idx === 0 && r1 > 0) ? r1 : N) || addMonth_(cur, 1);
+  }
+  return { cur: cur, end: end };
+}
+
 /**
- * Étend automatiquement chaque cours jusqu'au cycle en cours : dès qu'un cycle se termine,
- * le suivant est planifié tout seul (séances "Prévue" générées selon les jours habituels).
- * Si un cours n'a pas de jours habituels définis, on ne peut rien planifier automatiquement :
- * l'interface le signale plutôt que de deviner.
+ * Prolonge automatiquement chaque cours : dès qu'une session approche de sa fin (7 jours), la suivante est
+ * planifiée toute seule (séances "Prévue" générées selon les jours habituels). Si un cours n'a pas de jours
+ * habituels définis, on ne peut rien planifier automatiquement.
  */
 function ensureCycles_() {
-  const t = fmt_(new Date());
   read_('Cours').forEach(c => {
     if (!String(c.Jours || '').trim()) return;
-    const starts = cycleStarts_(c);
-    if (!starts.length) return;
-    let cur = starts[starts.length - 1];
-    while (addMonth_(cur, 1) <= t) cur = addMonth_(cur, 1);
-    planPeriod_(c, cur);
+    for (let i = 0; i < 8; i++) {
+      const starts = cycleStarts_(c, 7);
+      if (!starts.length) return;
+      if (!planPeriod_(c, starts[starts.length - 1])) break;
+    }
   });
 }
 
@@ -567,23 +589,23 @@ function planPeriod_(c, start) {
   const days = String(c.Jours || '').split(',').map(x => DAYS.indexOf(x.trim())).filter(i => i >= 0);
   if (!days.length || !start) return 0;
   start = String(start).slice(0, 10);
-  // 1er cycle d'un cours avec rattrapage : seulement N séances ; ensuite SeancesMois par mois.
+  // 1re session d'un cours avec rattrapage : seulement N séances ; ensuite SeancesMois par session.
   const base = cycleStartsBase_(c.ID);
   const premier = base.length ? base[0] : start;
   const n = (Number(c.Rattrapage) > 0 && start === premier) ? Number(c.Rattrapage) : (Number(c.SeancesMois) || 8);
-  const end = addMonth_(start, 1);
+  const suivant = base.filter(s => s > start).sort()[0] || null; // début de la session payée suivante, s'il existe
   const all = read_('Sessions').filter(s => String(s.CoursID) === String(c.ID));
   const taken = new Set(all.map(s => String(s.Date).slice(0, 10)));
   let count = all.filter(s => {
     const d = String(s.Date).slice(0, 10);
-    return d >= start && d < end && compteSession_(s);
+    return d >= start && (!suivant || d < suivant) && compteSession_(s);
   }).length;
   const p = start.split('-').map(Number);
   const rows = [];
-  for (let i = 0; i < 62 && count < n; i++) {
+  for (let i = 0; i < 150 && count < n; i++) {
     const dt = new Date(p[0], p[1] - 1, p[2] + i);
     const ds = fmt_(dt);
-    if (ds >= end) break;
+    if (suivant && ds >= suivant) break;
     if (days.indexOf(dt.getDay()) < 0 || taken.has(ds)) continue;
     rows.push([id_(), ds, c.ID, 'Prévue', '']);
     count++;
@@ -990,14 +1012,9 @@ function syncPaiementsVersAgenda_(cfg, deadline) {
   cours.forEach(c => {
     const prix = Number(c.PrixMois) || 0;
     if (prix <= 0) return; // cours gratuit : pas de paiement
-    const starts = cycleStarts_(c);
-    if (!starts.length) return;
-    let cur = starts[0];
-    starts.forEach(s => { if (s <= t) cur = s; });
-    const idx = starts.indexOf(cur);
-    let end;
-    if (idx < starts.length - 1) end = starts[idx + 1];
-    else { while (addMonth_(cur, 1) <= t) cur = addMonth_(cur, 1); end = addMonth_(cur, 1); }
+    const b = sessionBounds_(c, t);
+    if (!b) return;
+    const cur = b.cur, end = b.end;
     const due = premierJourCours_(c, end);
     const payeProchain = paiements.some(p => String(p.CoursID) === String(c.ID) && pstart_(p) >= addDays_(end, -7));
     if (payeProchain || due > addDays_(t, 45)) return;

@@ -271,6 +271,7 @@
   .dt.f{background:var(--ok);border-color:var(--ok)}
   .dt.p{background:#e7ecff}
   .dt.r{background:#ffe3e3;border-color:#fa5252}
+  .dt.x{border-color:#adb5bd;background:linear-gradient(135deg,#f1f3f5 42%,#adb5bd 42%,#adb5bd 58%,#f1f3f5 58%);opacity:.8}
   .dt.e{border-style:dashed;border-color:#ced4da}
   #app.enter .dt{animation:pop .35s ease both}
   .tlb .bar{position:relative;overflow:visible;height:7px}
@@ -300,7 +301,7 @@
 
 <script>
 var DEFAULT_API_URL = 'https://script.google.com/macros/s/AKfycbztgTfXpHNmpSmF4wXVNbv7LqFXVeSNW2N08xux8FYyjLW_jhjolPIxQTBDjHbAFU_1/exec';
-var APP_VERSION='2026.10.04.9';
+var APP_VERSION='2026.10.04.10';
 var D = {enfants:[], cours:[], seances:[], paiements:[], ecole:[], config:{emailPere:'',emailMere:'',veille:false,matin:false,uneHeure:false,ecoleAgenda:false,ecoleAlerte:false,rappelFin:true,alertePaiement:true}};
 var tab = 'home', fCours = '', fMonth = today().slice(0,7), calMonth = today().slice(0,7), bEdited = false;
 var STAT = ['Prévue','Faite','Ratée','Annulée','Reportée'];
@@ -485,6 +486,14 @@ function cycles(c){
   var k=String(c.ID);
   return CY[k]||(CY[k]=cycles_(c));
 }
+// Une SESSION = un paquet de N séances (SeancesMois). Elle se termine le lendemain de sa N-ième séance
+// (faite, prévue ou ratée). Une séance reportée/annulée n'est pas comptée : le remplacement prolonge la session.
+// Une séance ratée (non rattrapable) occupe une place sans être remplacée : la session se clôt une séance plus tôt.
+function sessionEnd(c,start,n){
+  var ds=D.seances.filter(function(x){return same(x.CoursID,c.ID)&&compteSession(x)&&String(x.Date).slice(0,10)>=start;})
+    .map(function(x){return String(x.Date).slice(0,10);}).sort();
+  return ds.length>=n?addDays(ds[n-1],1):null;
+}
 function cycles_(c){
   var set={};
   D.paiements.forEach(function(x){if(same(x.CoursID,c.ID))set[pstart(x)]=1;});
@@ -497,29 +506,19 @@ function cycles_(c){
     if(!first)return [];
     ss=[first];
   }
-  // Cycle de rattrapage : on rejoint en cours de session et on ne rattrape que `Rattrapage` séances.
-  // Le 1er cycle s'arrête le lendemain de la dernière séance rattrapée ; le cycle normal
-  // (SeancesMois par mois) démarre à cette date, sauf si un paiement la définit déjà.
-  var r1=Number(c.Rattrapage)||0;
-  if(r1>0){
-    var ds=D.seances.filter(function(x){return same(x.CoursID,c.ID)&&compteSession(x)&&String(x.Date).slice(0,10)>=ss[0];})
-      .map(function(x){return String(x.Date).slice(0,10);}).sort();
-    if(ds.length>=r1){
-      var s2=addDays(ds[r1-1],1);
-      if(!ss.slice(1).some(function(x){return x<=addDays(s2,7);}))ss=ss.concat(s2).sort();
-    }
+  var r1=Number(c.Rattrapage)||0, N=Number(c.SeancesMois)||8, t=today(), starts=ss.slice();
+  // Sessions suivantes déduites du nombre de séances (au-delà du dernier paiement connu), jusqu'à aujourd'hui.
+  var cur=starts[starts.length-1], k=(starts.length===1&&r1>0)?r1:N;
+  for(var g=0;g<60;g++){
+    var e=sessionEnd(c,cur,k);
+    if(!e||e>t)break;
+    starts.push(e);cur=e;k=N;
   }
-  var t=today(), starts=[];
-  ss.forEach(function(s,i){
-    starts.push(s);
-    var next=ss[i+1], cur=addMonth(s,1);
-    while(next?cur<=addDays(next,-15):cur<=t){starts.push(cur);cur=addMonth(cur,1);}
-  });
-  starts.sort();
   return starts.map(function(s,i){
-    var cy={start:s,end:i<starts.length-1?starts[i+1]:addMonth(s,1)};
+    var last=i===starts.length-1;
+    var cy={start:s,end:last?(sessionEnd(c,s,(i===0&&r1>0)?r1:N)||addMonth(s,1)):starts[i+1]};
     if(i===0){
-      // 1er cycle : rattrapage éventuel + frais d'inscription (une seule fois, jamais récurrents)
+      // 1re session : rattrapage éventuel + frais d'inscription (une seule fois, jamais récurrents)
       var fee=Number(c.FraisInscription)||0;
       if(r1>0){cy.rattrapage=true;cy.n=r1;}
       if(r1>0||fee>0){cy.fee=fee;cy.prix=(r1>0?prixRattrapage(c):(Number(c.PrixMois)||0))+fee;}
@@ -979,15 +978,18 @@ function courseCard(c){
     +'<div class="sub" style="margin:8px 0">Aucune séance ni paiement pour l\'instant.</div>'+acts+'</div>';
   var t=today(), s=cyStat(c,cur), pending=s.prix>0?s.reste>0:false, od=-daysTo(cur.start);
   var due=payDay(c,cur), nDue=daysTo(due);
-  // une pastille par séance du cycle : faite (pleine), prévue (creuse), à planifier (pointillée)
-  var ds=D.seances.filter(function(x){var d=String(x.Date).slice(0,10);return same(x.CoursID,c.ID)&&compteSession(x)&&d>=cur.start&&d<cur.end;})
+  // une pastille par séance de la session, QUEL QUE SOIT SON STATUT : faite (pleine), prévue (creuse),
+  // ratée (rouge), reportée/annulée (barrée, non comptée), à planifier (pointillée)
+  var win=D.seances.filter(function(x){var d=String(x.Date).slice(0,10);return same(x.CoursID,c.ID)&&d>=cur.start&&d<cur.end;})
     .sort(function(a,b){return String(a.Date)<String(b.Date)?-1:1;});
-  var dots='';
-  for(var k=0;k<Math.max(n,ds.length);k++){
-    var x=ds[k];
-    dots+=x?'<i class="dt '+(x.Statut==='Faite'?'f':x.Statut==='Ratée'?'r':'p')+'" title="'+esc(fd(x.Date)+(x.Statut==='Ratée'?' · ratée':''))+'"></i>':'<i class="dt e"></i>';
-  }
+  var ds=win.filter(compteSession), dots='';
+  win.forEach(function(x){
+    var cl=x.Statut==='Faite'?'f':x.Statut==='Ratée'?'r':x.Statut==='Prévue'?'p':'x';
+    dots+='<i class="dt '+cl+'" title="'+esc(fd(x.Date)+' · '+x.Statut)+'"></i>';
+  });
+  for(var k=ds.length;k<n;k++)dots+='<i class="dt e"></i>';
   var fait=ds.filter(function(x){return x.Statut==='Faite';}).length, ratees=ds.filter(function(x){return x.Statut==='Ratée';}).length, afaire=ds.length-fait-ratees;
+  var cible=Math.max(n-ratees,0); // une séance ratée clôt la session une séance plus tôt
   // Contrôle : plus de séances que prévu dans le cycle, ou deux séances le même jour (doublon)
   var seen={}, dup=[];
   ds.forEach(function(x){var d=String(x.Date).slice(0,10);if(seen[d])dup.push(fs(d));seen[d]=1;});
@@ -1018,7 +1020,7 @@ function courseCard(c){
     +'<span>Paiement prévu</span><b>le '+esc(fs(due))+' (1er jour de la session)</b></div>'+acts+'</details>';
   return '<div class="card cc '+(pending?'pending':'paid')+'" style="--cc:'+col+'">'
     +head+'<span class="badge '+payBadge(s)+'">'+payBadge(s)+'</span></div>'+infos
-    +'<div class="dotsrow"><div class="dots">'+dots+'</div><b>'+fait+' faite'+(fait>1?'s':'')+(ratees?' · '+ratees+' ratée'+(ratees>1?'s':''):'')+' · '+afaire+' à faire <span style="font-weight:400;color:var(--mut)">/ '+n+'</span></b></div>'+warn
+    +'<div class="dotsrow"><div class="dots">'+dots+'</div><b>'+fait+' faite'+(fait>1?'s':'')+' · '+afaire+' à faire <span style="font-weight:400;color:var(--mut)">/ '+cible+(ratees?' · '+ratees+' ratée'+(ratees>1?'s':''):'')+'</span></b></div>'+warn
     +timeline+foot+more+'</div>';
 }
 function vCourses(){

@@ -243,6 +243,8 @@
   .alrt.soon{background:#fff4e6;border:1.5px solid #ffa94d}.alrt.soon b{color:#d9480f}
   .alrt.late{background:#fff0f0;border:1.5px solid #ff8787}.alrt.late b{color:#c92a2a}
   .alrt .grow{min-width:0}.alrt .sub{color:#8a5a2b}
+  a.lieu{color:var(--pri);text-decoration:none;white-space:nowrap}
+  a.lieu:hover{text-decoration:underline}
 </style>
 </head>
 <body>
@@ -289,7 +291,15 @@ function enf(id){return idx().enf[String(id)]||{Nom:'?'};}
 function crs(id){return idx().crs[String(id)]||{Matiere:'?',PrixMois:0,SeancesMois:8};}
 function seance(id){return idx().ses[String(id)];}
 function cname(c){return enf(c.EnfantID).Nom+' — '+c.Matiere+(c.Prof?' ('+c.Prof+')':'');}
-function choraire(c){return c&&c.Heure?' · '+esc(c.Heure):'';}
+// Emplacement du cours : lien Google Maps (ou lien collé tel quel) sur l'adresse / la salle.
+function lieuHtml(c){
+  var l=c&&c.Lieu?String(c.Lieu).trim():'';
+  if(!l)return '';
+  var url=/^https?:\/\//i.test(l);
+  var href=url?l:'https://www.google.com/maps/search/?api=1&query='+encodeURIComponent(l);
+  return ' · <a class="lieu" href="'+esc(href)+'" target="_blank" rel="noopener" onclick="event.stopPropagation()">📍 '+(url?'Lieu':esc(l))+'</a>';
+}
+function choraire(c){return (c&&c.Heure?' · '+esc(c.Heure):'')+lieuHtml(c);}
 function ccol(eid){var i=D.enfants.findIndex(function(e){return same(e.ID,eid);});return PAL[(i<0?0:i)%PAL.length];}
 function dowName(s){return DOW[new Date(s+'T00:00').getDay()];}
 function avatarImg(e){
@@ -1087,6 +1097,7 @@ function vSet(){
           +'<label>Jours habituels</label><div class="days">'+DAYS.map(function(d){
             return '<label><input type="checkbox" class="c-jour" value="'+d+'"'+(j.indexOf(d)>=0?' checked':'')+'>'+d+'</label>';}).join('')+'</div>'
           +'<label>Horaire (ex. 15:00-16:30)</label><input class="c-heure" value="'+esc(c.Heure||'')+'" placeholder="15:00-16:30">'
+          +'<label>Emplacement (adresse, salle ou lien Google Maps)</label><input class="c-lieu" value="'+esc(c.Lieu||'')+'" placeholder="Chez le prof, centre X, salle 3…">'
           +'<div class="actions"><button class="b p" onclick="saveCoursForm(this)">Enregistrer ce cours</button>'
           +'<button class="b d" onclick="delCours(\''+c.ID+'\')">🗑 Supprimer ce cours</button></div></div>';
       }).join('')
@@ -1194,7 +1205,7 @@ function saveCoursForm(btn){
   var jours=[].slice.call(c.querySelectorAll('.c-jour:checked')).map(function(x){return x.value;}).join(',');
   call('saveCours',{ID:c.dataset.id,Matiere:c.querySelector('.c-mat').value.trim(),Prof:c.querySelector('.c-prof').value.trim(),
     PrixMois:Number(c.querySelector('.c-prix').value)||0,SeancesMois:Number(c.querySelector('.c-nb').value)||8,Rattrapage:Number(c.querySelector('.c-ratt').value)||0,PrixRattrapage:Number(c.querySelector('.c-prixr').value)||0,Jours:jours,
-    Heure:c.querySelector('.c-heure').value.trim()});
+    Heure:c.querySelector('.c-heure').value.trim(),Lieu:c.querySelector('.c-lieu').value.trim()});
 }
 function setStat(id,st){
   closeM();
@@ -1219,6 +1230,7 @@ function openNewCours(eid){
    +'<label>Jours habituels</label><div class="days">'+DAYS.map(function(d){
       return '<label><input type="checkbox" class="n-jour" value="'+d+'">'+d+'</label>';}).join('')+'</div>'
    +'<label>Horaire (ex. 15:00-16:30)</label><input id="n-heure" placeholder="15:00-16:30">'
+   +'<label>Emplacement (adresse, salle ou lien Google Maps)</label><input id="n-lieu" placeholder="Chez le prof, centre X, salle 3…">'
    +'<label>Première séance à partir du</label><input id="n-d" type="date" value="'+today()+'">'
    +'<div class="sub" style="margin-top:6px">Les séances du premier mois sont créées automatiquement. Tu les valides ensuite avec une case à cocher.</div>'
    +'<div class="actions"><button class="b p" onclick="okNewCours(\''+eid+'\')">Créer le cours</button><button class="b" onclick="closeM()">Annuler</button></div>');
@@ -1229,7 +1241,7 @@ function okNewCours(eid){
   var jours=[].slice.call(document.querySelectorAll('.n-jour:checked')).map(function(x){return x.value;}).join(',');
   if(!jours&&!confirm('Aucun jour habituel choisi : les séances ne seront pas générées automatiquement. Continuer ?'))return;
   closeM();
-  call('saveCours',{EnfantID:eid,Matiere:mat,Prof:v('n-prof').trim(),PrixMois:Number(v('n-prix'))||0,SeancesMois:Number(v('n-nb'))||8,Rattrapage:Number(v('n-ratt'))||0,PrixRattrapage:Number(v('n-prixr'))||0,Jours:jours,Heure:v('n-heure').trim()},v('n-d'));
+  call('saveCours',{EnfantID:eid,Matiere:mat,Prof:v('n-prof').trim(),PrixMois:Number(v('n-prix'))||0,SeancesMois:Number(v('n-nb'))||8,Rattrapage:Number(v('n-ratt'))||0,PrixRattrapage:Number(v('n-prixr'))||0,Jours:jours,Heure:v('n-heure').trim(),Lieu:v('n-lieu').trim()},v('n-d'));
 }
 
 function openSeance(id,cid,date){

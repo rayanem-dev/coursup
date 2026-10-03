@@ -17,7 +17,7 @@ const FAMILLE_CAL_ID = 'family07166730596940913601@group.calendar.google.com';
 const DAYS = ['Dim', 'Lun', 'Mar', 'Mer', 'Jeu', 'Ven', 'Sam'];
 const SHEETS = {
   Enfants:    ['ID', 'Nom', 'Photo', 'Email'],
-  Cours:      ['ID', 'EnfantID', 'Matiere', 'Prof', 'PrixMois', 'SeancesMois', 'Jours', 'Heure'],
+  Cours:      ['ID', 'EnfantID', 'Matiere', 'Prof', 'PrixMois', 'SeancesMois', 'Jours', 'Heure', 'Rattrapage', 'PrixRattrapage'],
   Sessions:   ['ID', 'Date', 'CoursID', 'Statut', 'Note'],
   Versements: ['ID', 'Date', 'CoursID', 'Mois', 'Montant', 'Mode', 'Note'],
   Ecole:      ['ID', 'EnfantID', 'Jour', 'Horaire', 'Matiere'],
@@ -451,8 +451,13 @@ function pstart_(x) {
   return m.length === 7 ? m + '-01' : m;
 }
 
-/** Dates de début de chaque cycle connu pour un cours (déduites des paiements, sinon de la 1ère séance). */
-function cycleStarts_(cId) {
+function addDays_(s, n) {
+  const p = s.split('-').map(Number);
+  return fmt_(new Date(p[0], p[1] - 1, p[2] + n));
+}
+
+/** Dates de début déduites des paiements, sinon de la 1ère séance (sans le cycle de rattrapage). */
+function cycleStartsBase_(cId) {
   const pays = read_('Versements').filter(x => String(x.CoursID) === String(cId)).map(pstart_);
   let starts = Array.from(new Set(pays)).sort();
   if (!starts.length) {
@@ -461,6 +466,26 @@ function cycleStarts_(cId) {
       .map(s => String(s.Date).slice(0, 10)).sort();
     if (!sess.length) return [];
     starts = [sess[0]];
+  }
+  return starts;
+}
+
+/**
+ * Dates de début de chaque cycle d'un cours. Cycle de rattrapage : si le cours a "Rattrapage" = N,
+ * le 1er cycle ne compte que N séances et se termine le lendemain de la N-ième ; le cycle normal
+ * démarre à cette date (sauf si un paiement la définit déjà à ±7 jours près). Même règle que le client.
+ */
+function cycleStarts_(c) {
+  let starts = cycleStartsBase_(c.ID);
+  const r1 = Number(c.Rattrapage) || 0;
+  if (r1 > 0 && starts.length) {
+    const ds = read_('Sessions')
+      .filter(s => String(s.CoursID) === String(c.ID) && (s.Statut === 'Faite' || s.Statut === 'Prévue') && String(s.Date).slice(0, 10) >= starts[0])
+      .map(s => String(s.Date).slice(0, 10)).sort();
+    if (ds.length >= r1) {
+      const s2 = addDays_(ds[r1 - 1], 1);
+      if (!starts.slice(1).some(x => x <= addDays_(s2, 7))) starts = starts.concat(s2).sort();
+    }
   }
   return starts;
 }
@@ -475,7 +500,7 @@ function ensureCycles_() {
   const t = fmt_(new Date());
   read_('Cours').forEach(c => {
     if (!String(c.Jours || '').trim()) return;
-    const starts = cycleStarts_(c.ID);
+    const starts = cycleStarts_(c);
     if (!starts.length) return;
     let cur = starts[starts.length - 1];
     while (addMonth_(cur, 1) <= t) cur = addMonth_(cur, 1);
@@ -533,7 +558,10 @@ function planPeriod_(c, start) {
   const days = String(c.Jours || '').split(',').map(x => DAYS.indexOf(x.trim())).filter(i => i >= 0);
   if (!days.length || !start) return 0;
   start = String(start).slice(0, 10);
-  const n = Number(c.SeancesMois) || 8;
+  // 1er cycle d'un cours avec rattrapage : seulement N séances ; ensuite SeancesMois par mois.
+  const base = cycleStartsBase_(c.ID);
+  const premier = base.length ? base[0] : start;
+  const n = (Number(c.Rattrapage) > 0 && start === premier) ? Number(c.Rattrapage) : (Number(c.SeancesMois) || 8);
   const end = addMonth_(start, 1);
   const all = read_('Sessions').filter(s => String(s.CoursID) === String(c.ID));
   const taken = new Set(all.map(s => String(s.Date).slice(0, 10)));

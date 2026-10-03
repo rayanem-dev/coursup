@@ -428,6 +428,18 @@ function cycles_(c){
     if(!first)return [];
     ss=[first];
   }
+  // Cycle de rattrapage : on rejoint en cours de session et on ne rattrape que `Rattrapage` séances.
+  // Le 1er cycle s'arrête le lendemain de la dernière séance rattrapée ; le cycle normal
+  // (SeancesMois par mois) démarre à cette date, sauf si un paiement la définit déjà.
+  var r1=Number(c.Rattrapage)||0;
+  if(r1>0){
+    var ds=D.seances.filter(function(x){return same(x.CoursID,c.ID)&&(x.Statut==='Faite'||x.Statut==='Prévue')&&String(x.Date).slice(0,10)>=ss[0];})
+      .map(function(x){return String(x.Date).slice(0,10);}).sort();
+    if(ds.length>=r1){
+      var s2=addDays(ds[r1-1],1);
+      if(!ss.slice(1).some(function(x){return x<=addDays(s2,7);}))ss=ss.concat(s2).sort();
+    }
+  }
   var t=today(), starts=[];
   ss.forEach(function(s,i){
     starts.push(s);
@@ -435,7 +447,17 @@ function cycles_(c){
     while(next?cur<=addDays(next,-15):cur<=t){starts.push(cur);cur=addMonth(cur,1);}
   });
   starts.sort();
-  return starts.map(function(s,i){return {start:s,end:i<starts.length-1?starts[i+1]:addMonth(s,1)};});
+  return starts.map(function(s,i){
+    var cy={start:s,end:i<starts.length-1?starts[i+1]:addMonth(s,1)};
+    if(i===0&&r1>0){cy.rattrapage=true;cy.n=r1;cy.prix=prixRattrapage(c);}
+    return cy;
+  });
+}
+// Prix du 1er cycle (rattrapage) : celui saisi, sinon proportionnel au nombre de séances.
+function prixRattrapage(c){
+  var r1=Number(c.Rattrapage)||0, p=Number(c.PrixRattrapage)||0;
+  if(p>0)return p;
+  return Math.round((Number(c.PrixMois)||0)*r1/(Number(c.SeancesMois)||8));
 }
 function curCycle(cys){
   var t=today();
@@ -451,7 +473,7 @@ function cyStat(c,cy){
     if(x.Statut==='Faite')f++;else if(x.Statut==='Prévue')pr++;
   });
   D.paiements.forEach(function(x){if(same(x.CoursID,c.ID)&&pstart(x)===cy.start)paye+=Number(x.Montant)||0;});
-  var prix=Number(c.PrixMois)||0;
+  var prix=cy.prix!==undefined?cy.prix:(Number(c.PrixMois)||0);
   return {faites:f,prevues:pr,paye:paye,prix:prix,reste:prix-paye};
 }
 function cStat(c){
@@ -806,7 +828,7 @@ function vDash(){
 function daysTo(d){return Math.round((new Date(d+'T00:00')-new Date(today()+'T00:00'))/86400000);}
 function dansTxt(d){var n=daysTo(d);return n<0?'il y a '+(-n)+' j':n===0?'aujourd\'hui':n===1?'demain':'dans '+n+' j';}
 function courseCard(c){
-  var n=Number(c.SeancesMois)||8, cur=curCycle(cycles(c)), col=ccol(c.EnfantID);
+  var cur=curCycle(cycles(c)), n=(cur&&cur.n)||Number(c.SeancesMois)||8, col=ccol(c.EnfantID);
   var top='<div class="chead"><div style="min-width:0"><b class="ctitle">'+subjIconBig(c.Matiere)+' <span dir="auto">'+esc(c.Matiere)+'</span></b>'
     +'<div class="sub">'+(c.Prof?esc(c.Prof)+' · ':'')+(c.Jours?esc(c.Jours):'jours non définis')+choraire(c)+' · '+fmt(c.PrixMois)+'/mois</div></div>';
   var acts='<div class="actions"><button class="b p" onclick="openPaie(null,\''+c.ID+'\')">+ Paiement</button>'
@@ -826,6 +848,7 @@ function courseCard(c){
     :'<div class="okb">✓ Cycle payé — '+fmt(s.paye)+'</div>';
   return '<div class="card cc '+(pending?'pending':'paid')+'" style="--cc:'+col+'">'
     +top+'<span class="badge '+payBadge(s)+'">'+payBadge(s)+'</span></div>'
+    +(cur.rattrapage?'<div class="sub" style="color:var(--pri)">🏃 Cycle de rattrapage : '+n+' séance'+(n>1?'s':'')+' puis '+(Number(c.SeancesMois)||8)+' par mois</div>':'')
     +banner
     +'<div><div class="bl"><span>Séances</span><b>'+fait+' faites · '+afaire+' à faire <span style="font-weight:400">/ '+n+'</span></b></div>'
     +'<div class="seg" style="margin-top:5px"><i class="d" style="width:'+(fait/n*100).toFixed(1)+'%"></i><i class="p" style="width:'+(afaire/n*100).toFixed(1)+'%"></i></div></div>'
@@ -1001,7 +1024,9 @@ function vSet(){
           +'<div class="g2"><div><label>Matière</label><input class="c-mat" value="'+esc(c.Matiere)+'"></div>'
           +'<div><label>Nom du prof</label><input class="c-prof" value="'+esc(c.Prof)+'"></div>'
           +'<div><label>Prix du mois (DA)</label><input class="c-prix" type="number" value="'+esc(c.PrixMois)+'"></div>'
-          +'<div><label>Séances par mois</label><input class="c-nb" type="number" value="'+esc(c.SeancesMois||8)+'"></div></div>'
+          +'<div><label>Séances par mois</label><input class="c-nb" type="number" value="'+esc(c.SeancesMois||8)+'"></div>'
+          +'<div><label>Séances à rattraper (1er cycle)</label><input class="c-ratt" type="number" min="0" value="'+esc(c.Rattrapage||'')+'"></div>'
+          +'<div><label>Prix du rattrapage (DA)</label><input class="c-prixr" type="number" min="0" placeholder="auto" value="'+esc(c.PrixRattrapage||'')+'"></div></div>'
           +'<label>Jours habituels</label><div class="days">'+DAYS.map(function(d){
             return '<label><input type="checkbox" class="c-jour" value="'+d+'"'+(j.indexOf(d)>=0?' checked':'')+'>'+d+'</label>';}).join('')+'</div>'
           +'<label>Horaire (ex. 15:00-16:30)</label><input class="c-heure" value="'+esc(c.Heure||'')+'" placeholder="15:00-16:30">'
@@ -1110,7 +1135,7 @@ function saveCoursForm(btn){
   var c=btn.closest('.course');
   var jours=[].slice.call(c.querySelectorAll('.c-jour:checked')).map(function(x){return x.value;}).join(',');
   call('saveCours',{ID:c.dataset.id,Matiere:c.querySelector('.c-mat').value.trim(),Prof:c.querySelector('.c-prof').value.trim(),
-    PrixMois:Number(c.querySelector('.c-prix').value)||0,SeancesMois:Number(c.querySelector('.c-nb').value)||8,Jours:jours,
+    PrixMois:Number(c.querySelector('.c-prix').value)||0,SeancesMois:Number(c.querySelector('.c-nb').value)||8,Rattrapage:Number(c.querySelector('.c-ratt').value)||0,PrixRattrapage:Number(c.querySelector('.c-prixr').value)||0,Jours:jours,
     Heure:c.querySelector('.c-heure').value.trim()});
 }
 function setStat(id,st){
@@ -1129,7 +1154,10 @@ function openNewCours(eid){
    +'<div class="g2"><div><label>Matière</label><input id="n-mat" placeholder="Science"></div>'
    +'<div><label>Nom du prof</label><input id="n-prof" placeholder="Merah"></div>'
    +'<div><label>Prix du mois (DA)</label><input id="n-prix" type="number" value="0"></div>'
-   +'<div><label>Séances par mois</label><input id="n-nb" type="number" value="8"></div></div>'
+   +'<div><label>Séances par mois</label><input id="n-nb" type="number" value="8"></div>'
+   +'<div><label>Séances à rattraper (optionnel)</label><input id="n-ratt" type="number" min="0" placeholder="ex. 3"></div>'
+   +'<div><label>Prix du rattrapage (DA)</label><input id="n-prixr" type="number" min="0" placeholder="auto"></div></div>'
+   +'<div class="sub">Tu rejoins en cours de session ? Indique le nombre de séances à rattraper : elles forment un 1er cycle court, puis le cycle normal démarre juste après. Prix « auto » = proportionnel.</div>'
    +'<label>Jours habituels</label><div class="days">'+DAYS.map(function(d){
       return '<label><input type="checkbox" class="n-jour" value="'+d+'">'+d+'</label>';}).join('')+'</div>'
    +'<label>Horaire (ex. 15:00-16:30)</label><input id="n-heure" placeholder="15:00-16:30">'
@@ -1143,7 +1171,7 @@ function okNewCours(eid){
   var jours=[].slice.call(document.querySelectorAll('.n-jour:checked')).map(function(x){return x.value;}).join(',');
   if(!jours&&!confirm('Aucun jour habituel choisi : les séances ne seront pas générées automatiquement. Continuer ?'))return;
   closeM();
-  call('saveCours',{EnfantID:eid,Matiere:mat,Prof:v('n-prof').trim(),PrixMois:Number(v('n-prix'))||0,SeancesMois:Number(v('n-nb'))||8,Jours:jours,Heure:v('n-heure').trim()},v('n-d'));
+  call('saveCours',{EnfantID:eid,Matiere:mat,Prof:v('n-prof').trim(),PrixMois:Number(v('n-prix'))||0,SeancesMois:Number(v('n-nb'))||8,Rattrapage:Number(v('n-ratt'))||0,PrixRattrapage:Number(v('n-prixr'))||0,Jours:jours,Heure:v('n-heure').trim()},v('n-d'));
 }
 
 function openSeance(id,cid,date){
@@ -1202,7 +1230,8 @@ function suggest(){
   var c=crs(v('m-c')), b=v('m-b');
   var cy=cycles(c).find(function(y){return y.start===b;});
   var amt=cy?Math.max(cyStat(c,cy).reste,0):0;
-  document.getElementById('m-a').value=amt||Number(c.PrixMois)||'';
+  var def=(Number(c.Rattrapage)>0&&!D.paiements.some(function(p){return same(p.CoursID,c.ID);}))?prixRattrapage(c):Number(c.PrixMois);
+  document.getElementById('m-a').value=amt||def||'';
 }
 function onPayDate(){if(!bEdited)document.getElementById('m-b').value=v('m-d');suggest();}
 
@@ -1212,7 +1241,7 @@ function openPaie(id,cid){
   var c0=x?x.CoursID:(cid||fCours||D.cours[0].ID);
   var d0=x?String(x.Date).slice(0,10):today();
   var b0=x?pstart(x):d0;
-  var amt=x?x.Montant:(Number(crs(c0).PrixMois)||'');
+  var c0o=crs(c0), amt=x?x.Montant:((Number(c0o.Rattrapage)>0&&!D.paiements.some(function(p){return same(p.CoursID,c0);}))?prixRattrapage(c0o):(Number(c0o.PrixMois)||''));
   x=x||{Mode:'Espèces',Note:''};
   bEdited=!!id;
   showM('<h2>'+(id?'Modifier':'Nouveau')+' paiement</h2>'

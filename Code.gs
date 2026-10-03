@@ -8,7 +8,7 @@
  * de fois à chaque action.
  */
 // Version du serveur : à garder identique à APP_VERSION dans index.html (affichée en bas de l'appli).
-const VERSION = '2026.10.04.13';
+const VERSION = '2026.10.04.14';
 const SS_ID = '1l-Em-TfMp8jS5kFfntUfnyPYZghl7BHvcUCUvZ6oM8Y';
 // Agenda PARTAGÉ "Famille" : tous les événements (cours + lycée) sont créés directement
 // dessus, au lieu du calendrier personnel de celui qui exécute le script. Comme c'est un
@@ -585,7 +585,7 @@ function saveEnfant(o) {
  * Planifie les séances "Prévue" d'un cours sur un mois à partir de `start` (yyyy-MM-dd),
  * selon ses jours habituels, jusqu'à atteindre SeancesMois séances. Sans doublon.
  */
-function planPeriod_(c, start) {
+function planPeriod_(c, start, depuis) {
   const days = String(c.Jours || '').split(',').map(x => DAYS.indexOf(x.trim())).filter(i => i >= 0);
   if (!days.length || !start) return 0;
   start = String(start).slice(0, 10);
@@ -600,7 +600,9 @@ function planPeriod_(c, start) {
     const d = String(s.Date).slice(0, 10);
     return d >= start && (!suivant || d < suivant) && compteSession_(s);
   }).length;
-  const p = start.split('-').map(Number);
+  // `depuis` : ne rien créer avant cette date (ex. reprogrammation : on ne recrée pas de séances dans le passé)
+  const debutScan = (depuis && String(depuis).slice(0, 10) > start) ? String(depuis).slice(0, 10) : start;
+  const p = debutScan.split('-').map(Number);
   const rows = [];
   for (let i = 0; i < 150 && count < n; i++) {
     const dt = new Date(p[0], p[1] - 1, p[2] + i);
@@ -621,7 +623,12 @@ function planPeriod_(c, start) {
 /** Crée ou modifie un cours. À la création, génère les séances du 1er mois à partir de `debut`. */
 function saveCours(o, debut) {
   if (o.ID) {
+    const avant = Object.assign({}, read_('Cours').find(x => String(x.ID) === String(o.ID)) || {}); // copie : l'état d'avant la modification
     update_('Cours', o.ID, o);
+    const norm = s => String(s || '').split(',').map(x => x.trim()).filter(Boolean).sort().join(',');
+    if (norm(o.Jours) !== norm(avant.Jours) || String(o.Heure || '').trim() !== String(avant.Heure || '').trim()) {
+      reprogrammerSeances_(o.ID, norm(o.Jours) !== norm(avant.Jours));
+    }
   } else {
     o.ID = id_();
     append_('Cours', o);
@@ -629,6 +636,46 @@ function saveCours(o, debut) {
     if (debut) planPeriod_(o, debut);
   }
   return getData();
+}
+
+/** Retire de l'agenda les événements liés à une séance (individuels ou regroupés "Enfants"). */
+function retirerEvenementsSeance_(id) {
+  try {
+    read_('CalSync').forEach(r => {
+      const k = String(r.Cle), m = k.match(/^(cours|coursFin)(G?)_(.+)$/);
+      if (!m) return;
+      const ids = m[2] ? m[3].split('+') : [m[3]];
+      if (ids.indexOf(String(id)) < 0) return;
+      try { const ev = getEvenementParId_(r.EventId); if (ev) ev.deleteEvent(); } catch (e) { /* déjà supprimé */ }
+      delete_('CalSync', k);
+    });
+  } catch (e) { /* agenda inaccessible : sans importance, la synchronisation corrigera */ }
+}
+
+/**
+ * Jours ou horaire d'un cours modifiés : les séances À VENIR ne suivent plus le bon planning.
+ *  - jours changés : les séances "Prévue" futures tombant un jour qui n'est plus habituel sont supprimées ;
+ *  - les événements Agenda des séances futures sont retirés (ils sont recréés à la prochaine synchronisation) ;
+ *  - la session en cours est complétée selon les nouveaux jours, à partir d'aujourd'hui seulement.
+ * Les séances faites, ratées, annulées ou passées ne sont jamais touchées.
+ */
+function reprogrammerSeances_(coursId, joursChanges) {
+  const c = read_('Cours').find(x => String(x.ID) === String(coursId));
+  if (!c) return;
+  const t = fmt_(new Date());
+  const joursOk = String(c.Jours || '').split(',').map(x => DAYS.indexOf(x.trim())).filter(i => i >= 0);
+  read_('Sessions')
+    .filter(s => String(s.CoursID) === String(coursId) && s.Statut === 'Prévue' && String(s.Date).slice(0, 10) >= t)
+    .forEach(s => {
+      const d = String(s.Date).slice(0, 10).split('-').map(Number);
+      const jourOk = joursOk.indexOf(new Date(d[0], d[1] - 1, d[2]).getDay()) >= 0;
+      retirerEvenementsSeance_(s.ID);
+      if (joursChanges && !jourOk) delete_('Sessions', s.ID);
+    });
+  if (joursOk.length) {
+    const b = sessionBounds_(c, t);
+    if (b) planPeriod_(c, b.cur, t);
+  }
 }
 
 /** Séance non faite : la marque "Reportée" et crée une nouvelle séance prévue à la nouvelle date. */
@@ -657,12 +704,7 @@ function deleteSeance(id) {
   const s = read_('Sessions').find(x => String(x.ID) === String(id));
   if (s && s.Statut !== 'Supprimée') {
     update_('Sessions', id, { Statut: 'Supprimée', Avant: s.Statut });
-    ['cours_' + id, 'coursFin_' + id].forEach(k => {
-      try {
-        const row = read_('CalSync').find(r => r.Cle === k);
-        if (row) { const ev = getEvenementParId_(row.EventId); if (ev) ev.deleteEvent(); delete_('CalSync', k); }
-      } catch (e) { /* événement déjà supprimé ou agenda inaccessible : sans importance */ }
-    });
+    retirerEvenementsSeance_(id);
   }
   return getData();
 }

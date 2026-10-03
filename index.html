@@ -321,7 +321,7 @@
 
 <script>
 var DEFAULT_API_URL = 'https://script.google.com/macros/s/AKfycbztgTfXpHNmpSmF4wXVNbv7LqFXVeSNW2N08xux8FYyjLW_jhjolPIxQTBDjHbAFU_1/exec';
-var APP_VERSION='2026.10.04.13';
+var APP_VERSION='2026.10.04.14';
 var D = {enfants:[], cours:[], seances:[], paiements:[], ecole:[], config:{emailPere:'',emailMere:'',veille:false,matin:false,uneHeure:false,ecoleAgenda:false,ecoleAlerte:false,rappelFin:true,alertePaiement:true}};
 var tab = 'home', fCours = '', fMonth = today().slice(0,7), bEdited = false;
 var STAT = ['Prévue','Faite','Ratée','Annulée','Reportée'];
@@ -1269,7 +1269,7 @@ function vSet(){
             return '<label><input type="checkbox" class="c-jour" value="'+d+'"'+(j.indexOf(d)>=0?' checked':'')+'>'+d+'</label>';}).join('')+'</div>'
           +'<label>Horaire (ex. 15:00-16:30)</label><input class="c-heure" value="'+esc(c.Heure||'')+'" placeholder="15:00-16:30">'
           +'<label>Emplacement (adresse, salle ou lien Google Maps)</label><input class="c-lieu" value="'+esc(c.Lieu||'')+'" placeholder="Chez le prof, centre X, salle 3…">'
-          +'<div class="actions"><button class="b p" onclick="saveCoursForm(this)">Enregistrer ce cours</button>'
+          +'<div class="sub">Si tu changes les jours habituels, les séances à venir sont reprogrammées automatiquement (les séances faites et passées ne bougent pas).</div><div class="actions"><button class="b p" onclick="saveCoursForm(this)">Enregistrer ce cours</button>'
           +'<button class="b d" onclick="delCours(\''+c.ID+'\')">🗑 Supprimer ce cours</button></div></div>';
       }).join('')
       +'<div class="actions"><button class="b" onclick="openNewCours(\''+e.ID+'\')">+ Ajouter un cours (matière / prof)</button></div></div>';
@@ -1375,6 +1375,9 @@ function delCours(id){
 }
 function saveCoursForm(btn){
   var c=btn.closest('.course');
+  var ancien=crs(c.dataset.id), nouveauxJours=[].slice.call(c.querySelectorAll('.c-jour:checked')).map(function(x){return x.value;}).sort().join(',');
+  var changeJours=nouveauxJours!==String(ancien.Jours||'').split(',').map(function(x){return x.trim();}).filter(Boolean).sort().join(',');
+  if(changeJours)showToast('Jours modifiés : séances à venir reprogrammées',null,null,5000);
   var jours=[].slice.call(c.querySelectorAll('.c-jour:checked')).map(function(x){return x.value;}).join(',');
   call('saveCours',{ID:c.dataset.id,Matiere:c.querySelector('.c-mat').value.trim(),Prof:c.querySelector('.c-prof').value.trim(),
     PrixMois:Number(c.querySelector('.c-prix').value)||0,SeancesMois:Number(c.querySelector('.c-nb').value)||8,Rattrapage:Number(c.querySelector('.c-ratt').value)||0,PrixRattrapage:Number(c.querySelector('.c-prixr').value)||0,FraisInscription:Number(c.querySelector('.c-frais').value)||0,Jours:jours,

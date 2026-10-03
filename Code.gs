@@ -17,7 +17,7 @@ const FAMILLE_CAL_ID = 'family07166730596940913601@group.calendar.google.com';
 const DAYS = ['Dim', 'Lun', 'Mar', 'Mer', 'Jeu', 'Ven', 'Sam'];
 const SHEETS = {
   Enfants:    ['ID', 'Nom', 'Photo', 'Email'],
-  Cours:      ['ID', 'EnfantID', 'Matiere', 'Prof', 'PrixMois', 'SeancesMois', 'Jours', 'Heure', 'Rattrapage', 'PrixRattrapage'],
+  Cours:      ['ID', 'EnfantID', 'Matiere', 'Prof', 'PrixMois', 'SeancesMois', 'Jours', 'Heure', 'Rattrapage', 'PrixRattrapage', 'Lieu'],
   Sessions:   ['ID', 'Date', 'CoursID', 'Statut', 'Note'],
   Versements: ['ID', 'Date', 'CoursID', 'Mois', 'Montant', 'Mode', 'Note'],
   Ecole:      ['ID', 'EnfantID', 'Jour', 'Horaire', 'Matiere'],
@@ -773,6 +773,12 @@ function normMat_(s) {
   return String(s || '').toLowerCase().normalize('NFD').replace(/[\u0300-\u036f]/g, '').replace(/\s+/g, ' ').trim();
 }
 
+/** Option `location` d'un événement Agenda à partir de l'emplacement du cours (vide = rien). */
+function lieuOpts_(c) {
+  const l = String((c && c.Lieu) || '').trim();
+  return l ? { location: l } : {};
+}
+
 /** Ajoute les rappels demandés à un événement, selon les préférences. allow1h=false pour le lycée (gratuit).
  *  Les minutes identiques ne sont ajoutées qu'une fois (ex. cours à 8h : "le matin" = "1h avant"). */
 function addReminders_(event, cfg, allow1h) {
@@ -873,7 +879,7 @@ function syncCoursVersAgenda_(cfg, horizonJours, deadline) {
     const titre = '📚 ' + (enf.Nom || '') + ' — ' + c.Matiere + (c.Prof ? ' (' + c.Prof + ')' : '');
     const deja = existants[cleEvt_(titre, start)];
     if (deja) { calSyncSet_(calSync, key, deja); continue; } // adopte l'événement existant (pas de doublon)
-    const event = cal.createEvent(titre, start, end);
+    const event = cal.createEvent(titre, start, end, lieuOpts_(c));
     addReminders_(event, cfg, true);
     calSyncSet_(calSync, key, event.getId());
     existants[cleEvt_(titre, start)] = event.getId();
@@ -894,7 +900,7 @@ function syncCoursVersAgenda_(cfg, horizonJours, deadline) {
           if (dejaFin) {
             calSyncSet_(calSync, keyFin, dejaFin);
           } else {
-            const eventFin = cal.createEvent(titreFin, finStart, finEnd);
+            const eventFin = cal.createEvent(titreFin, finStart, finEnd, lieuOpts_(c));
             eventFin.addPopupReminder(0); // notifie immédiatement à l'heure de cet événement
             calSyncSet_(calSync, keyFin, eventFin.getId());
             existants[cleEvt_(titreFin, finStart)] = eventFin.getId();
@@ -965,7 +971,7 @@ function syncPaiementsVersAgenda_(cfg, deadline) {
     const titre = '💳 Paiement — ' + (enf.Nom || '') + ' — ' + c.Matiere + (c.Prof ? ' (' + c.Prof + ')' : '') + ' : ' + prix + ' DA';
     const deja = existants[cleEvt_(titre, start)];
     if (deja) { calSyncSet_(calSync, key, deja); continue; }
-    const event = cal.createEvent(titre, start, fin, { description: 'Premier jour du nouveau cycle : paiement à régler (' + prix + ' DA).' });
+    const event = cal.createEvent(titre, start, fin, Object.assign({ description: 'Premier jour du nouveau cycle : paiement à régler (' + prix + ' DA).' }, lieuOpts_(c)));
     const minutes = [7 * 24 * 60, 0];
     // alerte à l'avant-dernière séance du cycle en cours
     const ds = sessions.filter(s => String(s.CoursID) === String(c.ID) && (s.Statut === 'Faite' || s.Statut === 'Prévue'))

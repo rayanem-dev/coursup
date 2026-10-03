@@ -137,7 +137,9 @@ function getConfig() {
     ecoleAlerte: p.getProperty('rappelEcole') === '1',
     // Rappel de fin de cours particulier ("récupération des enfants"), 30 min avant la
     // fin de la séance. Activé par défaut. Sans effet sur le lycée.
-    rappelFin: p.getProperty('rappelFin') !== '0'
+    rappelFin: p.getProperty('rappelFin') !== '0',
+    // Alerte de paiement dans l'agenda (tous les cours payants) : activée par défaut.
+    alertePaiement: p.getProperty('alertePaiement') !== '0'
   };
 }
 function saveConfig(o) {
@@ -150,6 +152,7 @@ function saveConfig(o) {
   if (o.ecoleAgenda !== undefined) p.setProperty('ecoleAgenda', o.ecoleAgenda ? '1' : '0');
   if (o.ecoleAlerte !== undefined) p.setProperty('rappelEcole', o.ecoleAlerte ? '1' : '0');
   if (o.rappelFin !== undefined) p.setProperty('rappelFin', o.rappelFin ? '1' : '0');
+  if (o.alertePaiement !== undefined) p.setProperty('alertePaiement', o.alertePaiement ? '1' : '0');
   return getData();
 }
 
@@ -903,6 +906,94 @@ function syncCoursVersAgenda_(cfg, horizonJours, deadline) {
   return { n, more, echecs: [] };
 }
 
+/** Premier jour de cours (jours habituels du cours) à partir de `from` (yyyy-MM-dd, inclus). */
+function premierJourCours_(c, from) {
+  const days = String(c.Jours || '').split(',').map(x => DAYS.indexOf(x.trim())).filter(i => i >= 0);
+  if (!days.length) return from;
+  for (let i = 0; i < 14; i++) {
+    const d = addDays_(from, i), p = d.split('-').map(Number);
+    if (days.indexOf(new Date(p[0], p[1] - 1, p[2]).getDay()) >= 0) return d;
+  }
+  return from;
+}
+
+/**
+ * Règle pour TOUS les cours payants : le paiement d'un cycle est dû le premier jour de cours du
+ * cycle suivant. On crée un événement "💳 Paiement" ce jour-là (à l'heure du cours), avec :
+ *  - une alerte 1 semaine avant,
+ *  - une alerte à l'avant-dernière séance du cycle en cours,
+ *  - une alerte à l'heure de l'événement.
+ * L'événement est retiré dès que le prochain cycle est payé ou si l'échéance change.
+ */
+function syncPaiementsVersAgenda_(cfg, deadline) {
+  if (!cfg.alertePaiement) return { n: 0, more: false, echecs: [] };
+  const cours = read_('Cours'), enfants = read_('Enfants'), sessions = read_('Sessions'), paiements = read_('Versements');
+  if (!cours.length) return { n: 0, more: false, echecs: [] };
+  const cal = familleCal_();
+  const calSync = chargerCalSync_();
+  const existants = chargerEvenementsExistants_(cal, 45);
+  const t = fmt_(new Date());
+  let n = 0, more = false;
+  for (const c of cours) {
+    if (Date.now() > deadline) { more = true; break; }
+    const prix = Number(c.PrixMois) || 0;
+    if (prix <= 0) continue; // cours gratuit : pas de paiement
+    const starts = cycleStarts_(c);
+    if (!starts.length) continue;
+    let cur = starts[0];
+    starts.forEach(s => { if (s <= t) cur = s; });
+    const idx = starts.indexOf(cur);
+    let end;
+    if (idx < starts.length - 1) end = starts[idx + 1];
+    else { while (addMonth_(cur, 1) <= t) cur = addMonth_(cur, 1); end = addMonth_(cur, 1); }
+    const due = premierJourCours_(c, end);
+    const key = 'pay_' + c.ID + '_' + due;
+    const payeProchain = paiements.some(p => String(p.CoursID) === String(c.ID) && pstart_(p) >= addDays_(end, -7));
+    // retire les anciens événements de paiement de ce cours (échéance changée ou prochain cycle déjà payé)
+    Object.keys(calSync).filter(k => k.indexOf('pay_' + c.ID + '_') === 0 && (k !== key || payeProchain)).forEach(k => {
+      try { const ev = getEvenementParId_(calSync[k]); if (ev) ev.deleteEvent(); } catch (e) { /* déjà supprimé */ }
+      delete_('CalSync', k);
+      delete calSync[k];
+    });
+    if (payeProchain || calSync[key] || due > addDays_(t, 45)) continue;
+
+    const m = String(c.Heure || '').match(/(\d{1,2}):(\d{2})-(\d{1,2}):(\d{2})/) || [null, 9, 0, 9, 30];
+    const dp = due.split('-').map(Number);
+    const start = new Date(dp[0], dp[1] - 1, dp[2], +m[1], +m[2], 0, 0);
+    const fin = new Date(dp[0], dp[1] - 1, dp[2], +m[3], +m[4], 0, 0);
+    const enf = enfants.find(e => String(e.ID) === String(c.EnfantID)) || {};
+    const titre = '💳 Paiement — ' + (enf.Nom || '') + ' — ' + c.Matiere + (c.Prof ? ' (' + c.Prof + ')' : '') + ' : ' + prix + ' DA';
+    const deja = existants[cleEvt_(titre, start)];
+    if (deja) { calSyncSet_(calSync, key, deja); continue; }
+    const event = cal.createEvent(titre, start, fin, { description: 'Premier jour du nouveau cycle : paiement à régler (' + prix + ' DA).' });
+    const minutes = [7 * 24 * 60, 0];
+    // alerte à l'avant-dernière séance du cycle en cours
+    const ds = sessions.filter(s => String(s.CoursID) === String(c.ID) && (s.Statut === 'Faite' || s.Statut === 'Prévue'))
+      .map(s => String(s.Date).slice(0, 10)).filter(d => d >= cur && d < end).sort();
+    if (ds.length >= 2) {
+      const pp = ds[ds.length - 2].split('-').map(Number);
+      const pen = new Date(pp[0], pp[1] - 1, pp[2], +m[1], +m[2], 0, 0);
+      const diff = Math.round((start.getTime() - pen.getTime()) / 60000);
+      if (diff > 0 && diff <= 40320) minutes.push(diff);
+    }
+    minutes.filter((v, i) => minutes.indexOf(v) === i).forEach(v => event.addPopupReminder(v));
+    calSyncSet_(calSync, key, event.getId());
+    existants[cleEvt_(titre, start)] = event.getId();
+    n++;
+  }
+  return { n, more, echecs: [] };
+}
+
+/** Lycée + séances + paiements, dans la limite de temps `deadline`. */
+function syncToutVersAgenda_(cfg, deadline) {
+  const r1 = syncEcoleVersAgenda_(cfg, 10, deadline);
+  if (r1.more) return { n: r1.n, more: true, echecs: r1.echecs };
+  const r2 = syncCoursVersAgenda_(cfg, 30, deadline);
+  if (r2.more) return { n: r1.n + r2.n, more: true, echecs: r1.echecs.concat(r2.echecs) };
+  const r3 = syncPaiementsVersAgenda_(cfg, deadline);
+  return { n: r1.n + r2.n + r3.n, more: r3.more, echecs: r1.echecs.concat(r2.echecs, r3.echecs) };
+}
+
 /**
  * À programmer une fois par jour (voir installerDeclencheurs). Étend la fenêtre d'événements
  * à venir. S'arrête d'elle-même bien avant la limite d'exécution d'Apps Script (6 min) :
@@ -912,12 +1003,9 @@ function syncCoursVersAgenda_(cfg, horizonJours, deadline) {
 function syncCalendrier() { return avecVerrou_(syncCalendrierInterne_); }
 function syncCalendrierInterne_() {
   const cfg = getConfig();
-  if (!cfg.veille && !cfg.matin && !cfg.uneHeure && !cfg.ecoleAgenda) return { n: 0, more: false };
+  if (!cfg.veille && !cfg.matin && !cfg.uneHeure && !cfg.ecoleAgenda && !cfg.alertePaiement) return { n: 0, more: false };
   const deadline = Date.now() + 4.5 * 60 * 1000; // marge de sécurité sous la limite de 6 min
-  const r1 = syncEcoleVersAgenda_(cfg, 10, deadline);
-  if (r1.more) return { n: r1.n, more: true, echecs: r1.echecs };
-  const r2 = syncCoursVersAgenda_(cfg, 30, deadline);
-  return { n: r1.n + r2.n, more: r2.more, echecs: r1.echecs.concat(r2.echecs) };
+  return syncToutVersAgenda_(cfg, deadline);
 }
 /** Appelable depuis l'appli (bouton "Synchroniser maintenant"). Un seul passage borné dans le temps. */
 function syncCalendrierManuel() { return syncCalendrier(); }
@@ -942,11 +1030,8 @@ function resyncCalendrierInterne_() {
   if (i < rows.length) return { n: 0, more: true }; // pas fini de nettoyer, relance "Tout resynchroniser"
 
   const cfg = getConfig();
-  if (!cfg.veille && !cfg.matin && !cfg.uneHeure && !cfg.ecoleAgenda) return { n: 0, more: false };
-  const r1 = syncEcoleVersAgenda_(cfg, 10, deadline);
-  if (r1.more) return { n: r1.n, more: true, echecs: r1.echecs };
-  const r2 = syncCoursVersAgenda_(cfg, 30, deadline);
-  return { n: r1.n + r2.n, more: r2.more, echecs: r1.echecs.concat(r2.echecs) };
+  if (!cfg.veille && !cfg.matin && !cfg.uneHeure && !cfg.ecoleAgenda && !cfg.alertePaiement) return { n: 0, more: false };
+  return syncToutVersAgenda_(cfg, deadline);
 }
 
 /**

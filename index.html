@@ -279,6 +279,8 @@
   details.more summary::before{content:'▸ '}details.more[open] summary::before{content:'▾ '}
   details.more[open]{background:var(--bg);border-radius:10px;padding:6px 10px 8px}
   @media(max-width:599px){.tiles{gap:8px}.tile{padding:8px 6px}.ring{width:66px;height:66px}.ring text{font-size:19px}.tile .big{font-size:19px}.tile .lbl{font-size:11px}}
+  .warnline{font-size:12px;background:#fff9db;border:1px solid #ffe066;border-radius:8px;padding:5px 9px;color:#8a6d00}
+  .warnline a{color:var(--pri);cursor:pointer;text-decoration:underline;font-weight:600}
 </style>
 </head>
 <body>
@@ -290,7 +292,7 @@
 
 <script>
 var DEFAULT_API_URL = 'https://script.google.com/macros/s/AKfycbztgTfXpHNmpSmF4wXVNbv7LqFXVeSNW2N08xux8FYyjLW_jhjolPIxQTBDjHbAFU_1/exec';
-var APP_VERSION='2026.10.04.5';
+var APP_VERSION='2026.10.04.6';
 var D = {enfants:[], cours:[], seances:[], paiements:[], ecole:[], config:{emailPere:'',emailMere:'',veille:false,matin:false,uneHeure:false,ecoleAgenda:false,ecoleAlerte:false,rappelFin:true,alertePaiement:true}};
 var tab = 'home', fCours = '', fMonth = today().slice(0,7), calMonth = today().slice(0,7), bEdited = false;
 var STAT = ['Prévue','Faite','Annulée','Reportée'];
@@ -614,6 +616,7 @@ function vPayAlerts(){
     return '<button class="pchip '+gr.kind+'" onclick="'+(many?'goCourses()':'openPaie(null,\''+c0.ID+'\')')+'"><span class="pdot"></span><span>'+who+'<br><small>'+txt+'</small></span></button>';
   }).join('')+'</div>';
 }
+function seeCourse(id,start){fCours=id;fMonth=String(start).slice(0,7);tab='seances';render();window.scrollTo(0,0);}
 function goCourses(){var e=document.getElementById('courses');if(e)e.scrollIntoView({behavior:'smooth'});}
 
 function nextDate(c,after){
@@ -969,6 +972,12 @@ function courseCard(c){
     dots+=x?'<i class="dt '+(x.Statut==='Faite'?'f':'p')+'" title="'+esc(fd(x.Date))+'"></i>':'<i class="dt e"></i>';
   }
   var fait=ds.filter(function(x){return x.Statut==='Faite';}).length, afaire=ds.length-fait;
+  // Contrôle : plus de séances que prévu dans le cycle, ou deux séances le même jour (doublon)
+  var seen={}, dup=[];
+  ds.forEach(function(x){var d=String(x.Date).slice(0,10);if(seen[d])dup.push(fs(d));seen[d]=1;});
+  var warn=(ds.length>n||dup.length)
+    ?'<div class="warnline">⚠️ '+ds.length+' séances dans ce cycle pour '+n+' prévues'+(dup.length?' · <b>doublon le '+esc(dup.join(', '))+'</b>':'')
+      +' <a onclick="seeCourse(\''+c.ID+'\',\''+cur.start+'\')">vérifier</a></div>':'';
   var total=daysTo(cur.end)-daysTo(cur.start)||1, pc=Math.min(Math.max((0-daysTo(cur.start))/total,0),1);
   var timeline='<div class="tlb"><div class="bar"><i style="width:'+(pc*100).toFixed(0)+'%"></i><u style="left:'+(pc*100).toFixed(0)+'%"></u></div>'
     +'<div class="bl"><span>'+esc(fs(cur.start))+'</span><span>aujourd\'hui</span><span>'+esc(fs(addDays(cur.end,-1)))+'</span></div></div>';
@@ -993,7 +1002,7 @@ function courseCard(c){
     +'<span>Paiement prévu</span><b>le '+esc(fs(due))+' (1er jour du cycle)</b></div>'+acts+'</details>';
   return '<div class="card cc '+(pending?'pending':'paid')+'" style="--cc:'+col+'">'
     +head+'<span class="badge '+payBadge(s)+'">'+payBadge(s)+'</span></div>'+infos
-    +'<div class="dotsrow"><div class="dots">'+dots+'</div><b>'+fait+' faite'+(fait>1?'s':'')+' · '+afaire+' à faire <span style="font-weight:400;color:var(--mut)">/ '+n+'</span></b></div>'
+    +'<div class="dotsrow"><div class="dots">'+dots+'</div><b>'+fait+' faite'+(fait>1?'s':'')+' · '+afaire+' à faire <span style="font-weight:400;color:var(--mut)">/ '+n+'</span></b></div>'+warn
     +timeline+foot+more+'</div>';
 }
 function vCourses(){

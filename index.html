@@ -302,6 +302,13 @@
   .sstrip{display:grid;grid-auto-flow:column;grid-auto-columns:minmax(290px,calc((100% - 28px)/3));gap:14px;overflow-x:auto;scroll-snap-type:x proximity;padding:2px 2px 10px;align-items:start;-webkit-overflow-scrolling:touch}
   .sstrip>*{scroll-snap-align:start;margin-bottom:0}
   @media(max-width:700px){.sstrip{grid-auto-columns:88%}}
+  .toprow{display:grid;gap:14px;grid-template-columns:minmax(0,1fr);align-items:start;margin-bottom:6px}
+  @media(min-width:1000px){.toprow.two{grid-template-columns:minmax(280px,2fr) minmax(0,3fr)}}
+  .toprow .paystrip{flex-direction:column;flex-wrap:nowrap;padding:0;gap:8px}
+  .toprow .pchip{flex:none;width:100%}
+  .toprow .tiles{margin-bottom:10px}
+  .tile .big{white-space:nowrap;font-size:clamp(15px,1.5vw,22px)}
+  .toprow .wk{height:54px}
 </style>
 </head>
 <body>
@@ -314,7 +321,7 @@
 
 <script>
 var DEFAULT_API_URL = 'https://script.google.com/macros/s/AKfycbztgTfXpHNmpSmF4wXVNbv7LqFXVeSNW2N08xux8FYyjLW_jhjolPIxQTBDjHbAFU_1/exec';
-var APP_VERSION='2026.10.04.12';
+var APP_VERSION='2026.10.04.13';
 var D = {enfants:[], cours:[], seances:[], paiements:[], ecole:[], config:{emailPere:'',emailMere:'',veille:false,matin:false,uneHeure:false,ecoleAgenda:false,ecoleAlerte:false,rappelFin:true,alertePaiement:true}};
 var tab = 'home', fCours = '', fMonth = today().slice(0,7), bEdited = false;
 var STAT = ['Prévue','Faite','Ratée','Annulée','Reportée'];
@@ -683,7 +690,9 @@ var lastTab=null;
 function vHome(){
   if(!D.cours.length)return '<div class="card"><div class="empty">Aucun cours pour l\'instant.<br>Va dans <b>Réglages</b> pour ajouter les cours (matière, prof, prix de la session).</div></div>';
   var dash=vDash();
-  return dash.top+'<div class="split"><div>'+vCourses()+'</div><aside>'+vTodo()+dash.stats+'</aside></div>';
+  // En haut, côte à côte : les paiements à régler (seulement s'il y en a) et les statistiques.
+  return dash.hello+'<div class="toprow'+(dash.pay?' two':'')+'">'+(dash.pay?'<div>'+dash.pay+'</div>':'')+'<div>'+dash.stats+'</div></div>'
+    +'<div class="split"><div>'+vCourses()+'</div><aside>'+vTodo()+'</aside></div>';
 }
 
 function vCalTab(){
@@ -971,7 +980,8 @@ function vDash(){
   var pctW=wT?wF/wT:0, pctP=prix?paye/prix:1;
   var nextTxt=next?(next.date<=t?'Maintenant':fs(next.date))+' · '+esc(cname(next.c)):'—';
   var hr=new Date().getHours();
-  return {top:'<div class="hello"><b>'+(hr<18?'Bonjour':'Bonsoir')+' 👋</b><span>'+esc(fd(t))+'</span></div>'+vPayAlerts(),
+  return {hello:'<div class="hello"><b>'+(hr<18?'Bonjour':'Bonsoir')+' 👋</b><span>'+esc(fd(t))+'</span></div>',
+    pay:vPayAlerts(),
     stats:'<div class="tiles">'
     +'<div class="tile">'+ring(pctW,'#3b5bdb',wF+'/'+wT)+'<div class="lbl">Séances cette semaine</div></div>'
     +'<div class="tile">'+ring(pctP,pctP>=1?'#2f9e44':'#e8590c',Math.round(pctP*100)+'%')+'<div class="lbl">Payé (session en cours)</div></div>'

@@ -8,7 +8,7 @@
  * de fois à chaque action.
  */
 // Version du serveur : à garder identique à APP_VERSION dans index.html (affichée en bas de l'appli).
-const VERSION = '2026.10.04.8';
+const VERSION = '2026.10.04.9';
 const SS_ID = '1l-Em-TfMp8jS5kFfntUfnyPYZghl7BHvcUCUvZ6oM8Y';
 // Agenda PARTAGÉ "Famille" : tous les événements (cours + lycée) sont créés directement
 // dessus, au lieu du calendrier personnel de celui qui exécute le script. Comme c'est un
@@ -340,6 +340,9 @@ function saveEnfantPhoto(enfantId, dataUrl) {
   return getData();
 }
 
+// Une séance "Ratée" (absence non rattrapable) est consommée dans la session : elle compte parmi les N cours, sans être remplacée.
+function compteSession_(s) { return s.Statut === 'Faite' || s.Statut === 'Prévue' || s.Statut === 'Ratée'; }
+
 function id_() { return Utilities.getUuid().slice(0, 8); }
 
 /* ===================== Cache par exécution =====================
@@ -467,7 +470,7 @@ function cycleStartsBase_(cId) {
   let starts = Array.from(new Set(pays)).sort();
   if (!starts.length) {
     const sess = read_('Sessions')
-      .filter(s => String(s.CoursID) === String(cId) && (s.Statut === 'Faite' || s.Statut === 'Prévue'))
+      .filter(s => String(s.CoursID) === String(cId) && compteSession_(s))
       .map(s => String(s.Date).slice(0, 10)).sort();
     if (!sess.length) return [];
     starts = [sess[0]];
@@ -485,7 +488,7 @@ function cycleStarts_(c) {
   const r1 = Number(c.Rattrapage) || 0;
   if (r1 > 0 && starts.length) {
     const ds = read_('Sessions')
-      .filter(s => String(s.CoursID) === String(c.ID) && (s.Statut === 'Faite' || s.Statut === 'Prévue') && String(s.Date).slice(0, 10) >= starts[0])
+      .filter(s => String(s.CoursID) === String(c.ID) && compteSession_(s) && String(s.Date).slice(0, 10) >= starts[0])
       .map(s => String(s.Date).slice(0, 10)).sort();
     if (ds.length >= r1) {
       const s2 = addDays_(ds[r1 - 1], 1);
@@ -573,7 +576,7 @@ function planPeriod_(c, start) {
   const taken = new Set(all.map(s => String(s.Date).slice(0, 10)));
   let count = all.filter(s => {
     const d = String(s.Date).slice(0, 10);
-    return d >= start && d < end && (s.Statut === 'Faite' || s.Statut === 'Prévue');
+    return d >= start && d < end && compteSession_(s);
   }).length;
   const p = start.split('-').map(Number);
   const rows = [];
@@ -1036,7 +1039,7 @@ function syncPaiementsVersAgenda_(cfg, deadline) {
     const minutes = [7 * 24 * 60, 0];
     // alerte à l'avant-dernière séance du cycle en cours (une par cours du groupe)
     gr.items.forEach(x => {
-      const ds = sessions.filter(s => String(s.CoursID) === String(x.c.ID) && (s.Statut === 'Faite' || s.Statut === 'Prévue'))
+      const ds = sessions.filter(s => String(s.CoursID) === String(x.c.ID) && compteSession_(s))
         .map(s => String(s.Date).slice(0, 10)).filter(d => d >= x.cur && d < x.end).sort();
       if (ds.length >= 2) {
         const pp = ds[ds.length - 2].split('-').map(Number);

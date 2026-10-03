@@ -42,6 +42,7 @@
   .badge.Annulée,.badge.Impayé{background:#ffe3e3;color:var(--ko)}
   .badge.Reportée,.badge.Partiel{background:#fff3bf;color:#e67700}
   .badge.Prévue{background:#dbe4ff;color:var(--pri)}
+  .badge.Ratée{background:#ffe8cc;color:#d9480f}
   button.b{border:1px solid var(--bd);background:#fff;border-radius:8px;padding:7px 10px;font-size:13px;cursor:pointer}
   button.p{background:var(--pri);color:#fff;border-color:var(--pri)}
   button.d{color:var(--ko);border-color:#f3c4c4}
@@ -82,6 +83,7 @@
   .cal .num{font-size:11px;color:var(--mut);text-align:right;padding:0 2px}
   .chip{font-size:10px;line-height:1.25;padding:2px 3px;border-radius:4px;margin-top:2px;border-left:3px solid;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;cursor:pointer}
   .chip.Annulée,.chip.Reportée{opacity:.5;text-decoration:line-through}
+  .chip.Ratée{opacity:.65;border-left-style:dashed}
   .chip.late{box-shadow:0 0 0 1.5px var(--warn)}
   .legend{display:flex;gap:12px;flex-wrap:wrap;font-size:12px;color:var(--mut);margin-top:10px;align-items:center}
   .dot{display:inline-block;width:10px;height:10px;border-radius:3px;margin-right:4px;vertical-align:-1px}
@@ -268,6 +270,7 @@
   .dt{width:15px;height:15px;border-radius:50%;display:block;border:2px solid #b8c4ff;background:#fff}
   .dt.f{background:var(--ok);border-color:var(--ok)}
   .dt.p{background:#e7ecff}
+  .dt.r{background:#ffe3e3;border-color:#fa5252}
   .dt.e{border-style:dashed;border-color:#ced4da}
   #app.enter .dt{animation:pop .35s ease both}
   .tlb .bar{position:relative;overflow:visible;height:7px}
@@ -297,10 +300,12 @@
 
 <script>
 var DEFAULT_API_URL = 'https://script.google.com/macros/s/AKfycbztgTfXpHNmpSmF4wXVNbv7LqFXVeSNW2N08xux8FYyjLW_jhjolPIxQTBDjHbAFU_1/exec';
-var APP_VERSION='2026.10.04.8';
+var APP_VERSION='2026.10.04.9';
 var D = {enfants:[], cours:[], seances:[], paiements:[], ecole:[], config:{emailPere:'',emailMere:'',veille:false,matin:false,uneHeure:false,ecoleAgenda:false,ecoleAlerte:false,rappelFin:true,alertePaiement:true}};
 var tab = 'home', fCours = '', fMonth = today().slice(0,7), calMonth = today().slice(0,7), bEdited = false;
-var STAT = ['Prévue','Faite','Annulée','Reportée'];
+var STAT = ['Prévue','Faite','Ratée','Annulée','Reportée'];
+// Une séance "Ratée" = absence non rattrapable : elle est consommée dans la session (elle compte parmi les N cours), sans être remplacée.
+function compteSession(x){return x.Statut==='Faite'||x.Statut==='Prévue'||x.Statut==='Ratée';}
 var DAYS = ['Dim','Lun','Mar','Mer','Jeu','Ven','Sam']; // la semaine commence le dimanche
 var DOW = ['Dim','Lun','Mar','Mer','Jeu','Ven','Sam'];
 var PAL = ['#3b5bdb','#e8590c','#2f9e44','#ae3ec9','#0c8599','#c2255c'];
@@ -487,7 +492,7 @@ function cycles_(c){
   if(!ss.length){
     var first=null;
     D.seances.forEach(function(x){
-      if(same(x.CoursID,c.ID)&&(x.Statut==='Faite'||x.Statut==='Prévue')){var d=String(x.Date).slice(0,10);if(!first||d<first)first=d;}
+      if(same(x.CoursID,c.ID)&&compteSession(x)){var d=String(x.Date).slice(0,10);if(!first||d<first)first=d;}
     });
     if(!first)return [];
     ss=[first];
@@ -497,7 +502,7 @@ function cycles_(c){
   // (SeancesMois par mois) démarre à cette date, sauf si un paiement la définit déjà.
   var r1=Number(c.Rattrapage)||0;
   if(r1>0){
-    var ds=D.seances.filter(function(x){return same(x.CoursID,c.ID)&&(x.Statut==='Faite'||x.Statut==='Prévue')&&String(x.Date).slice(0,10)>=ss[0];})
+    var ds=D.seances.filter(function(x){return same(x.CoursID,c.ID)&&compteSession(x)&&String(x.Date).slice(0,10)>=ss[0];})
       .map(function(x){return String(x.Date).slice(0,10);}).sort();
     if(ds.length>=r1){
       var s2=addDays(ds[r1-1],1);
@@ -538,18 +543,18 @@ function curCycle(cys){
   return cys.length?cys[cys.length-1]:null;
 }
 function cyStat(c,cy){
-  var f=0,pr=0,paye=0;
+  var f=0,pr=0,ra=0,paye=0;
   D.seances.forEach(function(x){
     if(!same(x.CoursID,c.ID))return;
     var d=String(x.Date).slice(0,10);
     if(d<cy.start||d>=cy.end)return;
-    if(x.Statut==='Faite')f++;else if(x.Statut==='Prévue')pr++;
+    if(x.Statut==='Faite')f++;else if(x.Statut==='Prévue')pr++;else if(x.Statut==='Ratée')ra++;
   });
   D.paiements.forEach(function(x){if(same(x.CoursID,c.ID)&&pstart(x)===cy.start)paye+=Number(x.Montant)||0;});
   // Cycle offert (ex. 1er cycle gratuit offert par le prof) : un paiement de 0 DA en mode "Offert" sur ce cycle.
   var offert=D.paiements.some(function(x){return same(x.CoursID,c.ID)&&pstart(x)===cy.start&&String(x.Mode||'').trim().toLowerCase()==='offert';});
   var prix=offert?0:(cy.prix!==undefined?cy.prix:(Number(c.PrixMois)||0));
-  return {faites:f,prevues:pr,paye:paye,prix:prix,reste:prix-paye,offert:offert};
+  return {faites:f,prevues:pr,ratees:ra,paye:paye,prix:prix,reste:prix-paye,offert:offert};
 }
 function cStat(c){
   var due=0,paid=0;
@@ -600,7 +605,7 @@ function payAlerts(){
     if(s.reste>0){out.push({kind:'late',c:c,amount:s.reste,due:cy.start});return;}
     var due=payDay(c,cy), n=daysTo(due);
     if(D.paiements.some(function(p){return same(p.CoursID,c.ID)&&pstart(p)>=addDays(cy.end,-7);}))return; // prochain cycle déjà payé
-    var ds=D.seances.filter(function(x){var d=String(x.Date).slice(0,10);return same(x.CoursID,c.ID)&&(x.Statut==='Faite'||x.Statut==='Prévue')&&d>=cy.start&&d<cy.end;})
+    var ds=D.seances.filter(function(x){var d=String(x.Date).slice(0,10);return same(x.CoursID,c.ID)&&compteSession(x)&&d>=cy.start&&d<cy.end;})
       .map(function(x){return String(x.Date).slice(0,10);}).sort();
     var pen=ds.length>=2?ds[ds.length-2]:null;
     if(n<=7||(pen&&t>=pen)){
@@ -938,7 +943,7 @@ function vDash(){
   var wk=weekBounds(t), wF=0, wT=0, perDay={};
   D.seances.forEach(function(s){
     var d=String(s.Date).slice(0,10);
-    if(d<wk.start||d>=wk.end||s.Statut==='Annulée')return;
+    if(d<wk.start||d>=wk.end||s.Statut==='Annulée'||s.Statut==='Ratée')return;
     wT++;var o=perDay[d]=perDay[d]||{t:0,f:0};o.t++;
     if(s.Statut==='Faite'){wF++;o.f++;}
   });
@@ -975,14 +980,14 @@ function courseCard(c){
   var t=today(), s=cyStat(c,cur), pending=s.prix>0?s.reste>0:false, od=-daysTo(cur.start);
   var due=payDay(c,cur), nDue=daysTo(due);
   // une pastille par séance du cycle : faite (pleine), prévue (creuse), à planifier (pointillée)
-  var ds=D.seances.filter(function(x){var d=String(x.Date).slice(0,10);return same(x.CoursID,c.ID)&&(x.Statut==='Faite'||x.Statut==='Prévue')&&d>=cur.start&&d<cur.end;})
+  var ds=D.seances.filter(function(x){var d=String(x.Date).slice(0,10);return same(x.CoursID,c.ID)&&compteSession(x)&&d>=cur.start&&d<cur.end;})
     .sort(function(a,b){return String(a.Date)<String(b.Date)?-1:1;});
   var dots='';
   for(var k=0;k<Math.max(n,ds.length);k++){
     var x=ds[k];
-    dots+=x?'<i class="dt '+(x.Statut==='Faite'?'f':'p')+'" title="'+esc(fd(x.Date))+'"></i>':'<i class="dt e"></i>';
+    dots+=x?'<i class="dt '+(x.Statut==='Faite'?'f':x.Statut==='Ratée'?'r':'p')+'" title="'+esc(fd(x.Date)+(x.Statut==='Ratée'?' · ratée':''))+'"></i>':'<i class="dt e"></i>';
   }
-  var fait=ds.filter(function(x){return x.Statut==='Faite';}).length, afaire=ds.length-fait;
+  var fait=ds.filter(function(x){return x.Statut==='Faite';}).length, ratees=ds.filter(function(x){return x.Statut==='Ratée';}).length, afaire=ds.length-fait-ratees;
   // Contrôle : plus de séances que prévu dans le cycle, ou deux séances le même jour (doublon)
   var seen={}, dup=[];
   ds.forEach(function(x){var d=String(x.Date).slice(0,10);if(seen[d])dup.push(fs(d));seen[d]=1;});
@@ -1013,7 +1018,7 @@ function courseCard(c){
     +'<span>Paiement prévu</span><b>le '+esc(fs(due))+' (1er jour de la session)</b></div>'+acts+'</details>';
   return '<div class="card cc '+(pending?'pending':'paid')+'" style="--cc:'+col+'">'
     +head+'<span class="badge '+payBadge(s)+'">'+payBadge(s)+'</span></div>'+infos
-    +'<div class="dotsrow"><div class="dots">'+dots+'</div><b>'+fait+' faite'+(fait>1?'s':'')+' · '+afaire+' à faire <span style="font-weight:400;color:var(--mut)">/ '+n+'</span></b></div>'+warn
+    +'<div class="dotsrow"><div class="dots">'+dots+'</div><b>'+fait+' faite'+(fait>1?'s':'')+(ratees?' · '+ratees+' ratée'+(ratees>1?'s':''):'')+' · '+afaire+' à faire <span style="font-weight:400;color:var(--mut)">/ '+n+'</span></b></div>'+warn
     +timeline+foot+more+'</div>';
 }
 function vCourses(){
@@ -1061,7 +1066,7 @@ function vTodo(){
       var c=crs(s.CoursID), d=String(s.Date).slice(0,10), late=d<=t;
       return '<div class="row"><label class="chk grow" style="margin:0"><input type="checkbox" onchange="setStat(\''+s.ID+'\',\'Faite\')">'
         +'<span><span style="font-size:16px;font-weight:700">'+subjIconBig(c.Matiere)+' '+esc(cname(c))+'</span><br><span class="sub">'+esc(fd(s.Date))+choraire(c)+'</span></span></label>'
-        +(late?'<button class="b i" onclick="openReport(\''+s.ID+'\')">↪ Non faite</button>':'<span class="badge Prévue">à venir</span>')+'</div>';
+        +(late?'<button class="b i" onclick="openReport(\''+s.ID+'\')">↪ Non faite</button> <button class="b i" title="Ratée : absent·e, non rattrapable" onclick="setStat(\''+s.ID+'\',\'Ratée\')">✕ Ratée</button>':'<span class="badge Prévue">à venir</span>')+'</div>';
     }).join('')
     +(cache?'<div class="sub" style="text-align:center;padding-top:10px">+ '+cache+' séance'+(cache>1?'s':'')+' les semaines suivantes (affichées dès dimanche)</div>':'')+'</div>';
 }
@@ -1130,7 +1135,7 @@ function vSeances(){
         +(can?'<input type="checkbox" style="width:22px;height:22px" title="Séance faite" '+(s.Statut==='Faite'?'checked':'')+' onchange="setStat(\''+s.ID+'\',this.checked?\'Faite\':\'Prévue\')">':'<span style="width:22px"></span>')
         +'<div class="grow"><span style="font-size:16px;font-weight:700">'+subjIconBig(crs(s.CoursID).Matiere)+' '+esc(cname(crs(s.CoursID)))+'</span><div class="sub">'+esc(fd(s.Date))+choraire(crs(s.CoursID))+(s.Note?' · '+esc(s.Note):'')+'</div></div>'
         +'<span class="badge '+s.Statut+'">'+s.Statut+'</span>'
-        +(s.Statut==='Prévue'?'<button class="b i" title="Décaler / reporter" onclick="openReport(\''+s.ID+'\')">↪</button>':'')
+        +(s.Statut==='Prévue'?'<button class="b i" title="Décaler / reporter" onclick="openReport(\''+s.ID+'\')">↪</button><button class="b i" title="Ratée : absent·e, non rattrapable" onclick="setStat(\''+s.ID+'\',\'Ratée\')">✕</button>':'')
         +'<button class="b i" onclick="openSeance(\''+s.ID+'\')">✎</button></div>';}).join(''):'<div class="empty">Aucune séance</div>')+'</div></div>'
     +((D.corbeille||[]).length?'<div class="card"><details class="trash"><summary>🗑 Corbeille ('+D.corbeille.length+') — séances supprimées</summary>'
       +D.corbeille.slice().sort(function(a,b){return String(b.Date)<String(a.Date)?-1:1;}).map(function(s){
@@ -1423,7 +1428,8 @@ function openAct(id){
    +(can?'<label class="chk"><input type="checkbox" '+(s.Statut==='Faite'?'checked':'')+' onchange="setStat(\''+id+'\',this.checked?\'Faite\':\'Prévue\')"> Séance faite</label>':'')
    +'<div class="actions">'
    +(s.Statut==='Prévue'?'<button class="b" onclick="openReport(\''+id+'\')">↪ Non faite : décaler / reporter</button>':'')
-   +((s.Statut==='Annulée'||s.Statut==='Reportée')?'<button class="b" onclick="setStat(\''+id+'\',\'Prévue\')">Remettre en prévue</button>':'')
+   +(s.Statut==='Prévue'?'<button class="b" onclick="setStat(\''+id+'\',\'Ratée\')">✕ Ratée : absent·e, non rattrapable</button>':'')
+   +((s.Statut==='Annulée'||s.Statut==='Reportée'||s.Statut==='Ratée')?'<button class="b" onclick="setStat(\''+id+'\',\'Prévue\')">Remettre en prévue</button>':'')
    +'<button class="b" onclick="openSeance(\''+id+'\')">✎ Modifier</button>'
    +'<button class="b" onclick="closeM()">Fermer</button></div>');
 }

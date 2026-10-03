@@ -298,8 +298,10 @@
   .srows{margin-top:8px}
   .srow{display:flex;align-items:center;gap:10px;padding:7px 4px;border-top:1px solid var(--bd);cursor:pointer;font-size:13.5px}
   .srow:hover{background:var(--bg)}.srow .sd{font-weight:600}
-  .sessnext{border:1.5px dashed #adb5bd;background:transparent;box-shadow:none;grid-column:1/-1;padding:10px 14px}
-  .cgrid.top{align-items:start}
+  .sessnext{border:1.5px dashed #adb5bd;background:transparent;box-shadow:none;padding:12px 14px}
+  .sstrip{display:grid;grid-auto-flow:column;grid-auto-columns:minmax(290px,calc((100% - 28px)/3));gap:14px;overflow-x:auto;scroll-snap-type:x proximity;padding:2px 2px 10px;align-items:start;-webkit-overflow-scrolling:touch}
+  .sstrip>*{scroll-snap-align:start;margin-bottom:0}
+  @media(max-width:700px){.sstrip{grid-auto-columns:88%}}
 </style>
 </head>
 <body>
@@ -312,7 +314,7 @@
 
 <script>
 var DEFAULT_API_URL = 'https://script.google.com/macros/s/AKfycbztgTfXpHNmpSmF4wXVNbv7LqFXVeSNW2N08xux8FYyjLW_jhjolPIxQTBDjHbAFU_1/exec';
-var APP_VERSION='2026.10.04.11';
+var APP_VERSION='2026.10.04.12';
 var D = {enfants:[], cours:[], seances:[], paiements:[], ecole:[], config:{emailPere:'',emailMere:'',veille:false,matin:false,uneHeure:false,ecoleAgenda:false,ecoleAlerte:false,rappelFin:true,alertePaiement:true}};
 var tab = 'home', fCours = '', fMonth = today().slice(0,7), bEdited = false;
 var STAT = ['Prévue','Faite','Ratée','Annulée','Reportée'];
@@ -671,6 +673,9 @@ function render(){
   app.className=(tab!==lastTab)?'enter':'';
   lastTab=tab;
   app.innerHTML=h;
+  if(tab==='sessions')[].forEach.call(document.querySelectorAll('.sstrip'),function(s){
+    var n=s.querySelector('.sess.now');if(n)s.scrollLeft=Math.max(n.offsetLeft-s.offsetLeft-12,0);
+  });
   var f=document.getElementById('ver');if(f)f.innerHTML='📚 Cours particuliers · '+versionHtml();
 }
 var lastTab=null;
@@ -1145,8 +1150,8 @@ function vSessions(){
         next='<div class="card sessnext"><b>⏭ Session '+(cys.indexOf(cur)+2)+'</b><div class="sub">démarre le '+esc(fd(cur.end))+' · paiement dû le <b>'+esc(fd(due))+'</b> ('+dansTxt(due)+') · '+fmt(c.PrixMois)+'</div></div>';
       }
       var cards=[];
-      for(var i=cys.length-1;i>=0;i--)cards.push(sessCard_(c,cys,i));
-      return head+'<div class="cgrid top">'+next+cards.join('')+'</div>';
+      for(var i=0;i<cys.length;i++)cards.push(sessCard_(c,cys,i));   // Session 1, 2, 3… de gauche à droite
+      return head+'<div class="sstrip">'+cards.join('')+next+'</div>';
     }).join('');
 }
 

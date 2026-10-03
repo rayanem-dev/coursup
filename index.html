@@ -242,19 +242,30 @@
   .alrt{display:flex;align-items:center;gap:10px;border-radius:14px;padding:11px 13px;font-size:14px;animation:pulse 1.8s ease-out infinite}
   .alrt.soon{background:#fff4e6;border:1.5px solid #ffa94d}.alrt.soon b{color:#d9480f}
   .alrt.late{background:#fff0f0;border:1.5px solid #ff8787}.alrt.late b{color:#c92a2a}
+  .alrtb{display:flex;gap:6px;flex-wrap:wrap;justify-content:flex-end}
   .alrt .grow{min-width:0}.alrt .sub{color:#8a5a2b}
   a.lieu{color:var(--pri);text-decoration:none;white-space:nowrap}
   a.lieu:hover{text-decoration:underline}
+  footer#ver{text-align:center;color:var(--mut);font-size:11.5px;padding:6px 12px calc(18px + env(safe-area-inset-bottom,0px))}
+  .setgrid{display:grid;gap:18px;grid-template-columns:minmax(0,1fr)}
+  @media(min-width:1000px){.setgrid{grid-template-columns:minmax(0,3fr) minmax(0,2fr);align-items:start}}
+  .setcol{display:flex;flex-direction:column;gap:14px;min-width:0}
+  .setcol .card{margin-bottom:0}
+  h3.sect{margin:4px 2px 0;font-size:13px;color:var(--mut);text-transform:uppercase;letter-spacing:.6px}
+  label.chk{display:block;position:relative;padding-left:34px;line-height:1.35}
+  label.chk>input{position:absolute;left:2px;top:-1px}
 </style>
 </head>
 <body>
 <header><h1>📚 Cours particuliers</h1></header>
 <nav id="tabs"></nav>
 <main id="app"><div class="empty">Chargement…</div></main>
+<footer id="ver"></footer>
 <div id="modal" class="modal hidden" onclick="if(event.target===this)closeM()"><div class="box" id="box"></div></div>
 
 <script>
 var DEFAULT_API_URL = 'https://script.google.com/macros/s/AKfycbztgTfXpHNmpSmF4wXVNbv7LqFXVeSNW2N08xux8FYyjLW_jhjolPIxQTBDjHbAFU_1/exec';
+var APP_VERSION='2026.10.04.2';
 var D = {enfants:[], cours:[], seances:[], paiements:[], ecole:[], config:{emailPere:'',emailMere:'',veille:false,matin:false,uneHeure:false,ecoleAgenda:false,ecoleAlerte:false,rappelFin:true,alertePaiement:true}};
 var tab = 'home', fCours = '', fMonth = today().slice(0,7), calMonth = today().slice(0,7), bEdited = false;
 var STAT = ['Prévue','Faite','Annulée','Reportée'];
@@ -551,14 +562,24 @@ function payAlerts(){
 }
 function vPayAlerts(){
   var l=payAlerts();if(!l.length)return '';
-  return '<div class="alerts">'+l.map(function(a){
-    var who=esc(enf(a.c.EnfantID).Nom)+' · '+esc(a.c.Matiere)+(a.c.Prof?' ('+esc(a.c.Prof)+')':'');
-    var msg=a.kind==='late'
-      ?'<b>Paiement en attente</b> — '+who+' : '+fmt(a.amount)
-      :(a.nextIsPay?'<b>La prochaine séance est celle du paiement</b> — ':'<b>Paiement à prévoir</b> — ')+who+' : '+fmt(a.amount)
-        +'<div class="sub">1er jour du prochain cycle : '+esc(fd(a.due))+' ('+dansTxt(a.due)+')</div>';
-    return '<div class="alrt '+a.kind+'"><span class="pdot"></span><div class="grow">'+msg+'</div>'
-      +'<button class="b p" onclick="openPaie(null,\''+a.c.ID+'\')">Payer</button></div>';
+  // Même échéance + même matière + même horaire pour plusieurs enfants = UNE seule alerte ("Enfants").
+  var groups=[], idxG={};
+  l.forEach(function(a){
+    var k=a.kind==='soon'?a.due+'|'+subjNorm(a.c.Matiere)+'|'+(a.c.Heure||''):'late|'+a.c.ID;
+    if(idxG[k]===undefined){idxG[k]=groups.length;groups.push({kind:a.kind,due:a.due,list:[]});}
+    groups[idxG[k]].list.push(a);
+  });
+  return '<div class="alerts">'+groups.map(function(gr){
+    var c0=gr.list[0].c, many=gr.list.length>1, total=gr.list.reduce(function(s,a){return s+a.amount;},0);
+    var who=(many?'Enfants':esc(enf(c0.EnfantID).Nom))+' · '+esc(c0.Matiere)+(!many&&c0.Prof?' ('+esc(c0.Prof)+')':'');
+    var nextIsPay=gr.list.every(function(a){return a.nextIsPay;});
+    var msg=gr.kind==='late'
+      ?'<b>Paiement en attente</b> — '+who+' : '+fmt(total)
+      :(nextIsPay?'<b>La prochaine séance est celle du paiement</b> — ':'<b>Paiement à prévoir</b> — ')+who+' : '+fmt(total)
+        +'<div class="sub">1er jour du prochain cycle : '+esc(fd(gr.due))+' ('+dansTxt(gr.due)+')</div>';
+    var btns=gr.list.map(function(a){
+      return '<button class="b p" onclick="openPaie(null,\''+a.c.ID+'\')">'+(many?'Payer '+esc(enf(a.c.EnfantID).Nom):'Payer')+'</button>';}).join('');
+    return '<div class="alrt '+gr.kind+'"><span class="pdot"></span><div class="grow">'+msg+'</div><div class="alrtb">'+btns+'</div></div>';
   }).join('')+'</div>';
 }
 
@@ -582,11 +603,12 @@ function render(){
   if(tab==='seances')h=vSeances();
   if(tab==='paie')h=vPaie();
   if(tab==='sujet')h=vSujet();
-  if(tab==='set')h='<div class="grid">'+vSet()+'</div>';
+  if(tab==='set')h=vSet();
   var app=document.getElementById('app');
   app.className=(tab!==lastTab)?'enter':'';
   lastTab=tab;
   app.innerHTML=h;
+  var f=document.getElementById('ver');if(f)f.innerHTML='📚 Cours particuliers · '+versionHtml();
 }
 var lastTab=null;
 
@@ -1043,15 +1065,31 @@ function vPaie(){
         +'<button class="b i" onclick="openPaie(\''+x.ID+'\')">✎</button></div>';}).join(''):'<div class="empty">Aucun paiement</div>')+'</div></div>';
 }
 
+function verInfo(){
+  var srv=D.version;
+  var ok=srv===APP_VERSION;
+  return {site:APP_VERSION,srv:srv||'ancienne',ok:ok};
+}
+function versionHtml(){
+  var v=verInfo();
+  return 'Site v'+esc(v.site)+' · Serveur '+(v.srv==='ancienne'?'ancienne version':'v'+esc(v.srv))+(v.ok?' ✓':' ⚠️');
+}
+function versionCard(){
+  var v=verInfo();
+  return '<div class="card"><div class="row"><span class="em" style="font-size:22px">🏷️</span><div class="grow"><b>Version</b>'
+    +'<div class="sub">Site : v'+esc(v.site)+'<br>Serveur (Apps Script) : '+(v.srv==='ancienne'?'ancienne version':'v'+esc(v.srv))+'</div>'
+    +(v.ok?'<div class="sub ok">✓ Tout est à jour</div>':'<div class="sub" style="color:var(--warn)">⚠️ Le serveur n\'est pas à la même version : recolle le dernier Code.gs dans Apps Script puis « Nouvelle version ».</div>')
+    +'</div></div></div>';
+}
 function vSet(){
   var cfg=D.config||{};
-  return '<div class="card"><div class="row"><span class="em" style="font-size:22px">🔗</span>'
+  var apiCard='<div class="card"><div class="row"><span class="em" style="font-size:22px">🔗</span>'
     +'<div class="grow"><b>URL de l\'API (Apps Script)</b><div class="sub" style="word-break:break-all">'+esc(apiUrl()||'—')+'</div></div>'
     +'<button class="b" onclick="changeApiUrl()">Modifier</button></div></div>'
     +'<div class="card"><div class="row"><span class="em" style="font-size:22px">📲</span>'
     +'<div class="grow"><b>Installer sur l\'écran d\'accueil</b><div class="sub">Accès rapide, en plein écran, comme une vraie appli.</div></div>'
-    +'<button class="b p" onclick="installHelp()">Installer</button></div></div>'
-    +'<div class="card"><h2 style="margin:0 0 4px">🔔 Rappels dans Google Agenda</h2>'
+    +'<button class="b p" onclick="installHelp()">Installer</button></div></div>';
+  var rappels='<div class="card"><h2 style="margin:0 0 4px">🔔 Rappels dans Google Agenda</h2>'
     +'<div class="sub" style="margin-bottom:8px">De vrais événements créés dans l\'agenda Google (avec alarme/notification sur le téléphone), pas juste un email.</div>'
     +'<div class="sub" style="margin-bottom:4px">Tous les événements sont créés directement sur l\'agenda partagé <b>Famille</b> : ils apparaissent chez toute personne abonnée à cet agenda, sans invitation à accepter. Si une alarme ne sonne pas chez quelqu\'un malgré tout, il doit vérifier, dans <i>ses propres</i> réglages Google Agenda (Paramètres de mes agendas > Famille > Notifications des événements), qu\'il n\'a pas lui-même désactivé les rappels pour cet agenda.</div>'
     +'<div class="g2"><div><label>Email du père</label><input id="cfg-email-p" value="'+esc(cfg.emailPere||'')+'" placeholder="papa@exemple.com"></div>'
@@ -1071,8 +1109,8 @@ function vSet(){
     +'<button class="b" onclick="dedupeNow()">🧹 Supprimer les doublons</button>'
     +'<button class="b d" onclick="deleteAllNow()">🗑 Supprimer toutes les alertes</button>'
     +'<button class="b" onclick="testAlerteNow()">🔔 Tester une alerte maintenant</button></div>'
-    +'<div class="sub" style="margin-top:6px">Sans le déclencheur automatique installé une fois dans Apps Script (voir dernier message), il faut cliquer "Synchroniser" pour créer les événements. Après un changement de préférences, utilise "Tout resynchroniser" pour que ça s\'applique aux événements déjà créés.</div></div>'
-    +D.enfants.map(function(e){
+    +'<div class="sub" style="margin-top:6px">Sans le déclencheur automatique installé une fois dans Apps Script (voir dernier message), il faut cliquer "Synchroniser" pour créer les événements. Après un changement de préférences, utilise "Tout resynchroniser" pour que ça s\'applique aux événements déjà créés.</div></div>';
+  var enfants=D.enfants.map(function(e){
     var cs=D.cours.filter(function(c){return same(c.EnfantID,e.ID);});
     return '<div class="card" data-eid="'+e.ID+'"><label>Enfant</label>'
       +'<div class="row" style="margin-bottom:8px">'
@@ -1102,9 +1140,11 @@ function vSet(){
           +'<button class="b d" onclick="delCours(\''+c.ID+'\')">🗑 Supprimer ce cours</button></div></div>';
       }).join('')
       +'<div class="actions"><button class="b" onclick="openNewCours(\''+e.ID+'\')">+ Ajouter un cours (matière / prof)</button></div></div>';
-  }).join('')
-  +'<button class="b" onclick="newEnfant()">+ Ajouter un enfant</button>'
+  }).join('');
+  var tail=''+'<button class="b" onclick="newEnfant()">+ Ajouter un enfant</button>'
   +'<p class="sub">Les séances prévues sont créées automatiquement à la création du cours et à chaque nouveau paiement, selon les jours habituels. Le mois commence le jour du paiement, et le cycle suivant s\'ouvre tout seul dès que le précédent se termine.</p>';
+  return '<div class="setgrid"><div class="setcol"><h3 class="sect">👶 Enfants et cours</h3>'+enfants+tail+'</div>'
+    +'<div class="setcol"><h3 class="sect">🔔 Rappels</h3>'+rappels+'<h3 class="sect">⚙️ Application</h3>'+apiCard+versionCard()+'</div></div>';
 }
 
 function saveEnfantNom(btn){

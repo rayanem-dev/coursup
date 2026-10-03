@@ -8,7 +8,7 @@
  * de fois à chaque action.
  */
 // Version du serveur : à garder identique à APP_VERSION dans index.html (affichée en bas de l'appli).
-const VERSION = '2026.10.04.6';
+const VERSION = '2026.10.04.7';
 const SS_ID = '1l-Em-TfMp8jS5kFfntUfnyPYZghl7BHvcUCUvZ6oM8Y';
 // Agenda PARTAGÉ "Famille" : tous les événements (cours + lycée) sont créés directement
 // dessus, au lieu du calendrier personnel de celui qui exécute le script. Comme c'est un
@@ -20,7 +20,7 @@ const DAYS = ['Dim', 'Lun', 'Mar', 'Mer', 'Jeu', 'Ven', 'Sam'];
 const SHEETS = {
   Enfants:    ['ID', 'Nom', 'Photo', 'Email'],
   Cours:      ['ID', 'EnfantID', 'Matiere', 'Prof', 'PrixMois', 'SeancesMois', 'Jours', 'Heure', 'Rattrapage', 'PrixRattrapage', 'Lieu', 'FraisInscription'],
-  Sessions:   ['ID', 'Date', 'CoursID', 'Statut', 'Note'],
+  Sessions:   ['ID', 'Date', 'CoursID', 'Statut', 'Note', 'Avant'],
   Versements: ['ID', 'Date', 'CoursID', 'Mois', 'Montant', 'Mode', 'Note'],
   Ecole:      ['ID', 'EnfantID', 'Jour', 'Horaire', 'Matiere'],
   Config:     ['Cle', 'Valeur'],
@@ -30,7 +30,7 @@ const SHEETS = {
 const TEXT_COLS = {
   Enfants: [1, 2, 3, 4],
   Cours: [1, 2, 3, 4, 7, 8],
-  Sessions: [1, 2, 3, 4, 5],
+  Sessions: [1, 2, 3, 4, 5, 6],
   Versements: [1, 2, 3, 4, 6, 7],
   Ecole: [1, 2, 3, 4, 5],
   Config: [1, 2],
@@ -111,7 +111,7 @@ function doPost(e) {
  * Web Apps Apps Script ne savent pas gérer.
  */
 const API_FNS = {
-  getData, saveEnfant, saveCours, saveSeance, deleteSeance,
+  getData, saveEnfant, saveCours, saveSeance, deleteSeance, restoreSeance,
   savePaiement, deletePaiement, reporterSeance, deleteCours,
   deleteEnfant, listDrive, getEcole, saveEcole, deleteEcole,
   importEcoleDepuisLycee, saveConfig, syncCalendrierManuel, resyncCalendrier,
@@ -623,7 +623,29 @@ function saveSeance(o) {
   else append_('Sessions', Object.assign({ ID: id_() }, o));
   return getData();
 }
-function deleteSeance(id) { delete_('Sessions', id); return getData(); }
+/**
+ * Suppression "douce" : la séance n'est pas effacée, elle passe au statut "Supprimée" (corbeille de
+ * l'appli) et peut être restaurée. L'événement Agenda lié est retiré. Les dates supprimées ne sont
+ * jamais re-planifiées automatiquement.
+ */
+function deleteSeance(id) {
+  const s = read_('Sessions').find(x => String(x.ID) === String(id));
+  if (s && s.Statut !== 'Supprimée') {
+    update_('Sessions', id, { Statut: 'Supprimée', Avant: s.Statut });
+    ['cours_' + id, 'coursFin_' + id].forEach(k => {
+      try {
+        const row = read_('CalSync').find(r => r.Cle === k);
+        if (row) { const ev = getEvenementParId_(row.EventId); if (ev) ev.deleteEvent(); delete_('CalSync', k); }
+      } catch (e) { /* événement déjà supprimé ou agenda inaccessible : sans importance */ }
+    });
+  }
+  return getData();
+}
+function restoreSeance(id) {
+  const s = read_('Sessions').find(x => String(x.ID) === String(id));
+  if (s && s.Statut === 'Supprimée') update_('Sessions', id, { Statut: s.Avant || 'Prévue', Avant: '' });
+  return getData();
+}
 
 /** Enregistre un paiement. À la création, planifie les séances de la période payée (début = champ Mois). */
 function savePaiement(o) {

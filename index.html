@@ -297,7 +297,7 @@
 
 <script>
 var DEFAULT_API_URL = 'https://script.google.com/macros/s/AKfycbztgTfXpHNmpSmF4wXVNbv7LqFXVeSNW2N08xux8FYyjLW_jhjolPIxQTBDjHbAFU_1/exec';
-var APP_VERSION='2026.10.04.7';
+var APP_VERSION='2026.10.04.8';
 var D = {enfants:[], cours:[], seances:[], paiements:[], ecole:[], config:{emailPere:'',emailMere:'',veille:false,matin:false,uneHeure:false,ecoleAgenda:false,ecoleAlerte:false,rappelFin:true,alertePaiement:true}};
 var tab = 'home', fCours = '', fMonth = today().slice(0,7), calMonth = today().slice(0,7), bEdited = false;
 var STAT = ['Prévue','Faite','Annulée','Reportée'];
@@ -582,7 +582,7 @@ function nextDue(c,cy){
   var s=cyStat(c,cy);
   return s.reste<=0 ? payDay(c,cy) : cy.start;
 }
-// Début de période proposé pour un nouveau paiement : cycle impayé en cours, sinon 1er jour du prochain cycle.
+// Début de période proposé pour un nouveau paiement : cycle impayé en cours, sinon 1er jour de la prochaine session.
 function defaultPeriodStart(cid,d0){
   var c=crs(cid), cy=curCycle(cycles(c));
   if(!cy)return d0;
@@ -590,7 +590,7 @@ function defaultPeriodStart(cid,d0){
 }
 // Alertes de paiement (tous les cours payants) :
 //  - cycle en cours impayé -> "late"
-//  - sinon, à 7 jours du 1er jour du prochain cycle OU dès l'avant-dernière séance du cycle -> "soon"
+//  - sinon, à 7 jours du 1er jour de la prochaine session OU dès l'avant-dernière séance du cycle -> "soon"
 function payAlerts(){
   var t=today(), out=[];
   D.cours.forEach(function(c){
@@ -660,7 +660,7 @@ function render(){
 var lastTab=null;
 
 function vHome(){
-  if(!D.cours.length)return '<div class="card"><div class="empty">Aucun cours pour l\'instant.<br>Va dans <b>Réglages</b> pour ajouter les cours (matière, prof, prix du mois).</div></div>';
+  if(!D.cours.length)return '<div class="card"><div class="empty">Aucun cours pour l\'instant.<br>Va dans <b>Réglages</b> pour ajouter les cours (matière, prof, prix de la session).</div></div>';
   var dash=vDash();
   return dash.top+'<div class="split"><div>'+vCourses()+'</div><aside>'+vTodo()+dash.stats+'</aside></div>';
 }
@@ -953,7 +953,7 @@ function vDash(){
   return {top:'<div class="hello"><b>'+(hr<18?'Bonjour':'Bonsoir')+' 👋</b><span>'+esc(fd(t))+'</span></div>'+vPayAlerts(),
     stats:'<div class="tiles">'
     +'<div class="tile">'+ring(pctW,'#3b5bdb',wF+'/'+wT)+'<div class="lbl">Séances cette semaine</div></div>'
-    +'<div class="tile">'+ring(pctP,pctP>=1?'#2f9e44':'#e8590c',Math.round(pctP*100)+'%')+'<div class="lbl">Payé (cycle en cours)</div></div>'
+    +'<div class="tile">'+ring(pctP,pctP>=1?'#2f9e44':'#e8590c',Math.round(pctP*100)+'%')+'<div class="lbl">Payé (session en cours)</div></div>'
     +'<div class="tile money'+(reste<=0?' ok':'')+'"><span class="lbl">Reste à payer</span><span class="big">'+fmt(Math.max(reste,0))+'</span><span class="hint">'+nextTxt+'</span></div>'
     +'<div class="tile money ok"><span class="lbl">Encaissé ce mois</span><span class="big">'+fmt(encaisse)+'</span><span class="hint">'+D.paiements.filter(function(x){return String(x.Date).slice(0,7)===m;}).length+' paiement(s)</span></div>'
     +'<div class="tile wide"><span class="lbl">Semaine en un coup d\'œil</span><div class="wk">'+strip+'</div></div>'
@@ -969,7 +969,7 @@ function courseCard(c){
     +'<div class="sub">'+esc(e.Nom)+(c.Prof?' · '+esc(c.Prof):'')+'</div></div>';
   var acts='<div class="actions"><button class="b p" onclick="openPaie(null,\''+c.ID+'\')">+ Paiement</button>'
     +'<button class="b" onclick="openSeance(null,\''+c.ID+'\')">+ Séance</button></div>';
-  var infos='<div class="sub">'+(c.Jours?esc(c.Jours):'jours non définis')+choraire(c)+' · '+fmt(c.PrixMois)+'/mois</div>';
+  var infos='<div class="sub">'+(c.Jours?esc(c.Jours):'jours non définis')+choraire(c)+' · '+fmt(c.PrixMois)+'/session</div>';
   if(!cur)return '<div class="card cc" style="--cc:'+col+'">'+head+'</div>'+infos
     +'<div class="sub" style="margin:8px 0">Aucune séance ni paiement pour l\'instant.</div>'+acts+'</div>';
   var t=today(), s=cyStat(c,cur), pending=s.prix>0?s.reste>0:false, od=-daysTo(cur.start);
@@ -987,16 +987,16 @@ function courseCard(c){
   var seen={}, dup=[];
   ds.forEach(function(x){var d=String(x.Date).slice(0,10);if(seen[d])dup.push(fs(d));seen[d]=1;});
   var warn=(ds.length>n||dup.length)
-    ?'<div class="warnline">⚠️ '+ds.length+' séances dans ce cycle pour '+n+' prévues'+(dup.length?' · <b>doublon le '+esc(dup.join(', '))+'</b>':'')
+    ?'<div class="warnline">⚠️ '+ds.length+' séances dans cette session pour '+n+' prévues'+(dup.length?' · <b>doublon le '+esc(dup.join(', '))+'</b>':'')
       +' <a onclick="seeCourse(\''+c.ID+'\',\''+cur.start+'\')">vérifier</a></div>':'';
   var total=daysTo(cur.end)-daysTo(cur.start)||1, pc=Math.min(Math.max((0-daysTo(cur.start))/total,0),1);
   var timeline='<div class="tlb"><div class="bar"><i style="width:'+(pc*100).toFixed(0)+'%"></i><u style="left:'+(pc*100).toFixed(0)+'%"></u></div>'
     +'<div class="bl"><span>'+esc(fs(cur.start))+'</span><span>aujourd\'hui</span><span>'+esc(fs(addDays(cur.end,-1)))+'</span></div></div>';
   var foot;
-  if(s.offert)foot='<div class="okb"><span>🎁 Cycle offert · prochain paiement le <b>'+esc(fs(due))+'</b> ('+dansTxt(due)+')</span></div>';
+  if(s.offert)foot='<div class="okb"><span>🎁 Session offerte · prochain paiement le <b>'+esc(fs(due))+'</b> ('+dansTxt(due)+')</span></div>';
   else if(s.prix<=0)foot='<div class="okb">Cours gratuit</div>';
   else if(pending)foot='<div class="wait"><span class="pdot"></span><div class="grow"><b>À payer '+fmt(s.reste)+'</b><div class="sub">'
-      +(s.paye>0?'payé '+fmt(s.paye)+' sur '+fmt(s.prix):'cycle '+esc(plabel(cur)))+(od>0?' · depuis '+od+' j':'')+'</div></div>'
+      +(s.paye>0?'payé '+fmt(s.paye)+' sur '+fmt(s.prix):'session '+esc(plabel(cur)))+(od>0?' · depuis '+od+' j':'')+'</div></div>'
       +'<button class="b p" onclick="openPaie(null,\''+c.ID+'\')">Payer</button></div>';
   else foot='<div class="okb'+(nDue<=7?' soon':'')+'"><span>✓ Payé · prochain paiement le <b>'+esc(fs(due))+'</b> ('+dansTxt(due)+')</span></div>';
   var last=D.paiements.filter(function(p){return same(p.CoursID,c.ID);})
@@ -1004,13 +1004,13 @@ function courseCard(c){
   var pP=s.prix?Math.min(s.paye/s.prix,1):1;
   var more='<details class="more"><summary>Détails</summary>'
     +(cur.fee>0?'<div class="sub" style="color:var(--pri)">🧾 Frais d\'inscription '+fmt(cur.fee)+' inclus dans ce premier paiement (une seule fois)</div>':'')
-    +(cur.rattrapage?'<div class="sub" style="color:var(--pri)">🏃 Cycle de rattrapage : '+n+' séance'+(n>1?'s':'')+' puis '+(Number(c.SeancesMois)||8)+' par mois</div>':'')
+    +(cur.rattrapage?'<div class="sub" style="color:var(--pri)">🏃 Session de rattrapage : '+n+' séance'+(n>1?'s':'')+' puis '+(Number(c.SeancesMois)||8)+' par session</div>':'')
     +'<div class="bl" style="margin-top:6px"><span>Paiement</span><b>'+fmt(s.paye)+' / '+fmt(s.prix)+'</b></div>'
     +'<div class="bar '+(pending?'warn':'ok')+'"><i style="width:'+(pP*100).toFixed(0)+'%"></i></div>'
-    +'<div class="tl"><span>Cycle en cours</span><b>'+esc(plabel(cur))+'</b>'
+    +'<div class="tl"><span>Session en cours</span><b>'+esc(plabel(cur))+'</b>'
     +'<span>Dernier paiement</span><b>'+(last?esc(fd(last.Date))+' · '+fmt(last.Montant):'aucun')+'</b>'
-    +'<span>Prochain cycle</span><b>'+esc(fd(cur.end))+' ('+dansTxt(cur.end)+')</b>'
-    +'<span>Paiement prévu</span><b>le '+esc(fs(due))+' (1er jour du cycle)</b></div>'+acts+'</details>';
+    +'<span>Prochaine session</span><b>'+esc(fd(cur.end))+' ('+dansTxt(cur.end)+')</b>'
+    +'<span>Paiement prévu</span><b>le '+esc(fs(due))+' (1er jour de la session)</b></div>'+acts+'</details>';
   return '<div class="card cc '+(pending?'pending':'paid')+'" style="--cc:'+col+'">'
     +head+'<span class="badge '+payBadge(s)+'">'+payBadge(s)+'</span></div>'+infos
     +'<div class="dotsrow"><div class="dots">'+dots+'</div><b>'+fait+' faite'+(fait>1?'s':'')+' · '+afaire+' à faire <span style="font-weight:400;color:var(--mut)">/ '+n+'</span></b></div>'+warn
@@ -1211,9 +1211,9 @@ function vSet(){
           +'<div class="sub" style="font-size:15px;margin:0 0 4px">'+subjIcon(c.Matiere)+' '+esc(c.Matiere)+(c.Prof?' · '+esc(c.Prof):'')+choraire(c)+'</div>'
           +'<div class="g2"><div><label>Matière</label><input class="c-mat" value="'+esc(c.Matiere)+'"></div>'
           +'<div><label>Nom du prof</label><input class="c-prof" value="'+esc(c.Prof)+'"></div>'
-          +'<div><label>Prix du mois (DA)</label><input class="c-prix" type="number" value="'+esc(c.PrixMois)+'"></div>'
-          +'<div><label>Séances par mois</label><input class="c-nb" type="number" value="'+esc(c.SeancesMois||8)+'"></div>'
-          +'<div><label>Séances à rattraper (1er cycle)</label><input class="c-ratt" type="number" min="0" value="'+esc(c.Rattrapage||'')+'"></div>'
+          +'<div><label>Prix de la session (DA)</label><input class="c-prix" type="number" value="'+esc(c.PrixMois)+'"></div>'
+          +'<div><label>Séances par session</label><input class="c-nb" type="number" value="'+esc(c.SeancesMois||8)+'"></div>'
+          +'<div><label>Séances à rattraper (1re session)</label><input class="c-ratt" type="number" min="0" value="'+esc(c.Rattrapage||'')+'"></div>'
           +'<div><label>Prix du rattrapage (DA)</label><input class="c-prixr" type="number" min="0" placeholder="auto" value="'+esc(c.PrixRattrapage||'')+'"></div>'
           +'<div><label>Frais d\'inscription (1re fois, DA)</label><input class="c-frais" type="number" min="0" placeholder="0" value="'+esc(c.FraisInscription||'')+'"></div></div>'
           +'<label>Jours habituels</label><div class="days">'+DAYS.map(function(d){
@@ -1226,7 +1226,7 @@ function vSet(){
       +'<div class="actions"><button class="b" onclick="openNewCours(\''+e.ID+'\')">+ Ajouter un cours (matière / prof)</button></div></div>';
   }).join('');
   var tail=''+'<button class="b" onclick="newEnfant()">+ Ajouter un enfant</button>'
-  +'<p class="sub">Les séances prévues sont créées automatiquement à la création du cours et à chaque nouveau paiement, selon les jours habituels. Le mois commence le jour du paiement, et le cycle suivant s\'ouvre tout seul dès que le précédent se termine.</p>';
+  +'<p class="sub">Les séances prévues sont créées automatiquement à la création du cours et à chaque nouveau paiement, selon les jours habituels. Une <b>session</b> = un paquet de cours payé d\'un coup : elle commence le premier jour de cours, et la session suivante s\'ouvre toute seule dès que la précédente se termine.</p>';
   return '<div class="setgrid"><div class="setcol"><h3 class="sect">👶 Enfants et cours</h3>'+enfants+tail+'</div>'
     +'<div class="setcol"><h3 class="sect">🔔 Rappels</h3>'+rappels+'<h3 class="sect">⚙️ Application</h3>'+apiCard+versionCard()+'</div></div>';
 }
@@ -1346,19 +1346,19 @@ function openNewCours(eid){
   showM('<h2>Nouveau cours — '+esc(enf(eid).Nom)+'</h2>'
    +'<div class="g2"><div><label>Matière</label><input id="n-mat" placeholder="Science"></div>'
    +'<div><label>Nom du prof</label><input id="n-prof" placeholder="Merah"></div>'
-   +'<div><label>Prix du mois (DA)</label><input id="n-prix" type="number" value="0"></div>'
-   +'<div><label>Séances par mois</label><input id="n-nb" type="number" value="8"></div>'
+   +'<div><label>Prix de la session (DA)</label><input id="n-prix" type="number" value="0"></div>'
+   +'<div><label>Séances par session</label><input id="n-nb" type="number" value="8"></div>'
    +'<div><label>Séances à rattraper (optionnel)</label><input id="n-ratt" type="number" min="0" placeholder="ex. 3"></div>'
    +'<div><label>Prix du rattrapage (DA)</label><input id="n-prixr" type="number" min="0" placeholder="auto"></div>'
    +'<div><label>Frais d\'inscription (DA, 1re fois)</label><input id="n-frais" type="number" min="0" placeholder="0"></div></div>'
    +'<div class="sub">Les frais d\'inscription s\'ajoutent au <b>premier paiement uniquement</b> (jamais récurrents).</div>'
-   +'<div class="sub">Tu rejoins en cours de session ? Indique le nombre de séances à rattraper : elles forment un 1er cycle court, puis le cycle normal démarre juste après. Prix « auto » = proportionnel.</div>'
+   +'<div class="sub">Tu rejoins en cours de session ? Indique le nombre de séances à rattraper : elles forment un 1re session courte, puis la session normale démarre juste après. Prix « auto » = proportionnel.</div>'
    +'<label>Jours habituels</label><div class="days">'+DAYS.map(function(d){
       return '<label><input type="checkbox" class="n-jour" value="'+d+'">'+d+'</label>';}).join('')+'</div>'
    +'<label>Horaire (ex. 15:00-16:30)</label><input id="n-heure" placeholder="15:00-16:30">'
    +'<label>Emplacement (adresse, salle ou lien Google Maps)</label><input id="n-lieu" placeholder="Chez le prof, centre X, salle 3…">'
    +'<label>Première séance à partir du</label><input id="n-d" type="date" value="'+today()+'">'
-   +'<div class="sub" style="margin-top:6px">Les séances du premier mois sont créées automatiquement. Tu les valides ensuite avec une case à cocher.</div>'
+   +'<div class="sub" style="margin-top:6px">Les séances de la première session sont créées automatiquement. Tu les valides ensuite avec une case à cocher.</div>'
    +'<div class="actions"><button class="b p" onclick="okNewCours(\''+eid+'\')">Créer le cours</button><button class="b" onclick="closeM()">Annuler</button></div>');
 }
 function okNewCours(eid){
@@ -1474,9 +1474,9 @@ function openPaie(id,cid){
    +'<label>Cours</label>'+coursSelect('m-c',c0,id?'':'onchange="suggest()"')
    +'<label>Date du paiement</label><input id="m-d" type="date" value="'+d0+'" '+(id?'':'onchange="onPayDate()"')+'>'
    +'<label>Début de la période payée</label><input id="m-b" type="date" value="'+b0+'" onchange="bEdited=true;'+(id?'':'suggest()')+'">'
-   +'<div class="sub" style="margin-top:4px">Le paiement est dû le 1er jour de cours du cycle (proposé automatiquement).</div>'
+   +'<div class="sub" style="margin-top:4px">Le paiement est dû le 1er jour de cours de la session (proposé automatiquement).</div>'
    +'<label>Montant (DA)</label><input id="m-a" type="number" value="'+esc(amt)+'">'
-   +'<label class="chk"><input type="checkbox" id="m-off"'+(String(x.Mode||'').toLowerCase()==='offert'?' checked':'')+' onchange="onOffert()"> 🎁 Cycle <b>offert</b> (0 DA, ex. offert par le prof)</label>'
+   +'<label class="chk"><input type="checkbox" id="m-off"'+(String(x.Mode||'').toLowerCase()==='offert'?' checked':'')+' onchange="onOffert()"> 🎁 Session <b>offerte</b> (0 DA, ex. offert par le prof)</label>'
    +'<label>Mode</label><input id="m-mode" value="'+esc(x.Mode)+'">'
    +'<label>Note</label><input id="m-n" value="'+esc(x.Note)+'">'
    +(id?'':'<div class="sub" style="margin-top:8px">📅 Les séances prévues de la période seront créées automatiquement.</div>')

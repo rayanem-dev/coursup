@@ -8,7 +8,7 @@
  * de fois à chaque action.
  */
 // Version du serveur : à garder identique à APP_VERSION dans index.html (affichée en bas de l'appli).
-const VERSION = '2026.10.04.7';
+const VERSION = '2026.10.04.8';
 const SS_ID = '1l-Em-TfMp8jS5kFfntUfnyPYZghl7BHvcUCUvZ6oM8Y';
 // Agenda PARTAGÉ "Famille" : tous les événements (cours + lycée) sont créés directement
 // dessus, au lieu du calendrier personnel de celui qui exécute le script. Comme c'est un
@@ -1031,7 +1031,7 @@ function syncPaiementsVersAgenda_(cfg, deadline) {
     const deja = existants[cleEvt_(titre, start)];
     if (deja) { calSyncSet_(calSync, key, deja); continue; }
     const event = cal.createEvent(titre, start, fin, Object.assign(
-      { description: 'Premier jour du nouveau cycle : paiement à régler (' + total + ' DA).' },
+      { description: 'Premier jour de la nouvelle session : paiement à régler (' + total + ' DA).' },
       lieux.length === 1 ? { location: lieux[0] } : {}));
     const minutes = [7 * 24 * 60, 0];
     // alerte à l'avant-dernière séance du cycle en cours (une par cours du groupe)

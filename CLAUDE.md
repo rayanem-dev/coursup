@@ -7,3 +7,4 @@
 - **Icônes :** liens directs `https://rayanem-dev.github.io/coursup/icon-*.png` (pas de base64 dans `Code.gs`).
 - **`Code.gs` :** copie du script Apps Script déployé ; le propriétaire le colle lui-même dans Apps Script, penser à le rappeler quand il change.
 - **Version :** à chaque livraison, incrémenter `APP_VERSION` (`index.html`) et `VERSION` (`Code.gs`) avec la même valeur (`AAAA.MM.JJ.n`) ; elle s'affiche en bas de l'appli et signale si le serveur n'est pas à jour.
+- **Vocabulaire :** une **session** = un paquet de N cours payé d'un coup (jamais « mois » ni « cycle » dans l'interface ni dans les réponses). Un cours isolé = une **séance**. « Ce mois » reste réservé aux statistiques du calendrier (ex. « Encaissé ce mois »).

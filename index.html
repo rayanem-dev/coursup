@@ -238,6 +238,11 @@
   @keyframes blink{50%{opacity:.35;transform:scale(.8)}}
   #app.enter .seg i{animation:barin .9s cubic-bezier(.3,.7,.2,1) both}
   #app.enter .seg .p{animation-delay:.25s}
+  .alerts{display:grid;gap:8px;margin-bottom:14px}
+  .alrt{display:flex;align-items:center;gap:10px;border-radius:14px;padding:11px 13px;font-size:14px;animation:pulse 1.8s ease-out infinite}
+  .alrt.soon{background:#fff4e6;border:1.5px solid #ffa94d}.alrt.soon b{color:#d9480f}
+  .alrt.late{background:#fff0f0;border:1.5px solid #ff8787}.alrt.late b{color:#c92a2a}
+  .alrt .grow{min-width:0}.alrt .sub{color:#8a5a2b}
 </style>
 </head>
 <body>
@@ -248,7 +253,7 @@
 
 <script>
 var DEFAULT_API_URL = 'https://script.google.com/macros/s/AKfycbztgTfXpHNmpSmF4wXVNbv7LqFXVeSNW2N08xux8FYyjLW_jhjolPIxQTBDjHbAFU_1/exec';
-var D = {enfants:[], cours:[], seances:[], paiements:[], ecole:[], config:{emailPere:'',emailMere:'',veille:false,matin:false,uneHeure:false,ecoleAgenda:false,ecoleAlerte:false,rappelFin:true}};
+var D = {enfants:[], cours:[], seances:[], paiements:[], ecole:[], config:{emailPere:'',emailMere:'',veille:false,matin:false,uneHeure:false,ecoleAgenda:false,ecoleAlerte:false,rappelFin:true,alertePaiement:true}};
 var tab = 'home', fCours = '', fMonth = today().slice(0,7), calMonth = today().slice(0,7), bEdited = false;
 var STAT = ['Prévue','Faite','Annulée','Reportée'];
 var DAYS = ['Dim','Lun','Mar','Mer','Jeu','Ven','Sam']; // la semaine commence le dimanche
@@ -491,10 +496,60 @@ function weekBounds(t){
   var start=addDays(t,-dow);
   return {start:start, end:addDays(start,7)};
 }
+// Règle : le paiement d'un cycle est dû le PREMIER JOUR DE COURS de ce cycle
+// (premier jour habituel du cours à partir du début du cycle).
+function firstDayOn(c,from){
+  var days=String(c.Jours||'').split(',').map(function(x){return x.trim();}).filter(Boolean);
+  if(!days.length)return from;
+  for(var i=0;i<14;i++){var d=addDays(from,i);if(days.indexOf(dowName(d))>=0)return d;}
+  return from;
+}
+function payDay(c,cy){return firstDayOn(c,cy.end);}
 function nextDue(c,cy){
   if(!cy)return null;
   var s=cyStat(c,cy);
-  return s.reste<=0 ? cy.end : cy.start;
+  return s.reste<=0 ? payDay(c,cy) : cy.start;
+}
+// Début de période proposé pour un nouveau paiement : cycle impayé en cours, sinon 1er jour du prochain cycle.
+function defaultPeriodStart(cid,d0){
+  var c=crs(cid), cy=curCycle(cycles(c));
+  if(!cy)return d0;
+  return cyStat(c,cy).reste>0?cy.start:payDay(c,cy);
+}
+// Alertes de paiement (tous les cours payants) :
+//  - cycle en cours impayé -> "late"
+//  - sinon, à 7 jours du 1er jour du prochain cycle OU dès l'avant-dernière séance du cycle -> "soon"
+function payAlerts(){
+  var t=today(), out=[];
+  D.cours.forEach(function(c){
+    var cy=curCycle(cycles(c));if(!cy)return;
+    var s=cyStat(c,cy);
+    if(!(s.prix>0||Number(c.PrixMois)>0))return;
+    if(s.reste>0){out.push({kind:'late',c:c,amount:s.reste,due:cy.start});return;}
+    var due=payDay(c,cy), n=daysTo(due);
+    if(D.paiements.some(function(p){return same(p.CoursID,c.ID)&&pstart(p)>=addDays(cy.end,-7);}))return; // prochain cycle déjà payé
+    var ds=D.seances.filter(function(x){var d=String(x.Date).slice(0,10);return same(x.CoursID,c.ID)&&(x.Statut==='Faite'||x.Statut==='Prévue')&&d>=cy.start&&d<cy.end;})
+      .map(function(x){return String(x.Date).slice(0,10);}).sort();
+    var pen=ds.length>=2?ds[ds.length-2]:null;
+    if(n<=7||(pen&&t>=pen)){
+      var nx=D.seances.filter(function(x){var d=String(x.Date).slice(0,10);return same(x.CoursID,c.ID)&&x.Statut==='Prévue'&&d>=t;})
+        .map(function(x){return String(x.Date).slice(0,10);}).sort()[0];
+      out.push({kind:'soon',c:c,amount:Number(c.PrixMois)||0,due:due,n:n,nextIsPay:!nx||nx>=due});
+    }
+  });
+  return out.sort(function(a,b){return (a.kind==='late'?0:1)-(b.kind==='late'?0:1)||(a.due<b.due?-1:1);});
+}
+function vPayAlerts(){
+  var l=payAlerts();if(!l.length)return '';
+  return '<div class="alerts">'+l.map(function(a){
+    var who=esc(enf(a.c.EnfantID).Nom)+' · '+esc(a.c.Matiere)+(a.c.Prof?' ('+esc(a.c.Prof)+')':'');
+    var msg=a.kind==='late'
+      ?'<b>Paiement en attente</b> — '+who+' : '+fmt(a.amount)
+      :(a.nextIsPay?'<b>La prochaine séance est celle du paiement</b> — ':'<b>Paiement à prévoir</b> — ')+who+' : '+fmt(a.amount)
+        +'<div class="sub">1er jour du prochain cycle : '+esc(fd(a.due))+' ('+dansTxt(a.due)+')</div>';
+    return '<div class="alrt '+a.kind+'"><span class="pdot"></span><div class="grow">'+msg+'</div>'
+      +'<button class="b p" onclick="openPaie(null,\''+a.c.ID+'\')">Payer</button></div>';
+  }).join('')+'</div>';
 }
 
 function nextDate(c,after){
@@ -816,6 +871,7 @@ function vDash(){
   var nextTxt=next?(next.date<=t?'Maintenant':fs(next.date))+' · '+esc(cname(next.c)):'—';
   var hr=new Date().getHours();
   return '<div class="hello"><b>'+(hr<18?'Bonjour':'Bonsoir')+' 👋</b><span>'+esc(fd(t))+'</span></div>'
+    +vPayAlerts()
     +'<div class="tiles">'
     +'<div class="tile">'+ring(pctW,'#3b5bdb',wF+'/'+wT)+'<div class="lbl">Séances cette semaine</div></div>'
     +'<div class="tile">'+ring(pctP,pctP>=1?'#2f9e44':'#e8590c',Math.round(pctP*100)+'%')+'<div class="lbl">Payé (cycle en cours)</div></div>'
@@ -857,7 +913,7 @@ function courseCard(c){
     +'<div class="tl"><span>Cycle en cours</span><b>'+esc(plabel(cur))+'</b>'
     +'<span>Dernier paiement</span><b>'+(last?esc(fd(last.Date))+' · '+fmt(last.Montant):'aucun')+'</b>'
     +'<span>Prochain cycle</span><b>'+esc(fd(cur.end))+' <span style="color:'+(pending?'var(--warn)':'var(--mut)')+';font-weight:500">('+dansTxt(cur.end)+')</span></b>'
-    +'<span>Paiement prévu</span><b'+(pending?' style="color:var(--warn)"':'')+'>'+(pending?'maintenant, puis ':'')+'le '+esc(fs(cur.end))+'</b></div>'
+    +'<span>Paiement prévu</span><b'+(pending?' style="color:var(--warn)"':'')+'>'+(pending?'maintenant, puis ':'')+'le '+esc(fs(payDay(c,cur)))+' <span style="font-weight:400;color:var(--mut)">(1er jour du cycle)</span></b></div>'
     +acts+'</div>';
 }
 function vCourses(){
@@ -994,6 +1050,7 @@ function vSet(){
     +'<label class="chk" style="margin-top:4px"><input type="checkbox" id="cfg-veille"'+(cfg.veille?' checked':'')+'> La veille (1 jour avant)</label>'
     +'<label class="chk"><input type="checkbox" id="cfg-matin"'+(cfg.matin?' checked':'')+'> Le matin même (~7h00)</label>'
     +'<label class="chk"><input type="checkbox" id="cfg-1h"'+(cfg.uneHeure?' checked':'')+'> 1h avant un cours particulier <b>payant</b></label>'
+    +'<label class="chk"><input type="checkbox" id="cfg-alerte-pay"'+(cfg.alertePaiement!==false?' checked':'')+'> 💳 Rappel de <b>paiement</b> dans l\'agenda (1 semaine avant et à l\'avant-dernière séance)</label>'
     +'<label class="chk"><input type="checkbox" id="cfg-rappel-fin"'+(cfg.rappelFin?' checked':'')+'> 🚗 Récupération : 30 min avant la <b>fin</b> du cours</label>'
     +'<p class="sub" style="margin:14px 0 2px"><b>Lycée</b> — par défaut, RIEN n\'est ajouté à l\'agenda pour le lycée.</p>'
     +'<label class="chk" style="margin-top:4px"><input type="checkbox" id="cfg-ecole-agenda" onchange="onEcoleAgendaChange()"'+(cfg.ecoleAgenda?' checked':'')+'> Ajouter les cours du <b>lycée</b> à l\'agenda de l\'enfant</label>'
@@ -1059,7 +1116,8 @@ function saveConfigForm(){
     uneHeure:document.getElementById('cfg-1h').checked,
     ecoleAgenda:document.getElementById('cfg-ecole-agenda').checked,
     ecoleAlerte:document.getElementById('cfg-ecole-alerte').checked,
-    rappelFin:document.getElementById('cfg-rappel-fin').checked
+    rappelFin:document.getElementById('cfg-rappel-fin').checked,
+    alertePaiement:document.getElementById('cfg-alerte-pay').checked
   });
 }
 function syncLoop_(action,total,onDone,echecs){
@@ -1240,15 +1298,15 @@ function openPaie(id,cid){
   var x=id?D.paiements.find(function(y){return same(y.ID,id);}):null;
   var c0=x?x.CoursID:(cid||fCours||D.cours[0].ID);
   var d0=x?String(x.Date).slice(0,10):today();
-  var b0=x?pstart(x):d0;
+  var b0=x?pstart(x):defaultPeriodStart(c0,d0);
   var c0o=crs(c0), amt=x?x.Montant:((Number(c0o.Rattrapage)>0&&!D.paiements.some(function(p){return same(p.CoursID,c0);}))?prixRattrapage(c0o):(Number(c0o.PrixMois)||''));
   x=x||{Mode:'Espèces',Note:''};
-  bEdited=!!id;
+  bEdited=!!id||b0!==d0;
   showM('<h2>'+(id?'Modifier':'Nouveau')+' paiement</h2>'
    +'<label>Cours</label>'+coursSelect('m-c',c0,id?'':'onchange="suggest()"')
    +'<label>Date du paiement</label><input id="m-d" type="date" value="'+d0+'" '+(id?'':'onchange="onPayDate()"')+'>'
    +'<label>Début de la période payée</label><input id="m-b" type="date" value="'+b0+'" onchange="bEdited=true;'+(id?'':'suggest()')+'">'
-   +'<div class="sub" style="margin-top:4px">Le mois commence à cette date (par défaut le jour du paiement).</div>'
+   +'<div class="sub" style="margin-top:4px">Le paiement est dû le 1er jour de cours du cycle (proposé automatiquement).</div>'
    +'<label>Montant (DA)</label><input id="m-a" type="number" value="'+esc(amt)+'">'
    +'<label>Mode</label><input id="m-mode" value="'+esc(x.Mode)+'">'
    +'<label>Note</label><input id="m-n" value="'+esc(x.Note)+'">'
